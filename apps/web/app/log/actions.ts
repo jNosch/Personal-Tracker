@@ -6,7 +6,7 @@
 // half-saved. setTrainingMax is Wave's manual-entry bootstrap (#16) —
 // trainingMaxKg has no other way to get its first value (see schemes.ts's
 // prescribe/update file-header note).
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "../../db/client";
 import {
@@ -23,6 +23,7 @@ import {
   computeSessionOneRmKg,
   resolveCountsTowardOneRm,
 } from "../../lib/oneRm";
+import { nextDayPosition } from "../../lib/rotation";
 import {
   prescribe,
   roundToNearest,
@@ -146,15 +147,9 @@ export async function logSession(
       }
     }
 
-    // Rotation advance (#9): always (loggedDay.position + 1) mod day count,
-    // regardless of what next_day_position previously pointed at. "mod day
-    // count" is read as "next position in the active rotation, wrapping" —
-    // walking the sorted list of active positions rather than doing literal
-    // arithmetic on the raw position number, because positions aren't
-    // contiguous once any day has ever been archived (archived days keep
-    // their position slot forever, see addDayTemplate in
-    // programs/actions.ts). Raw (position + 1) % count can land on a gap
-    // that no active day occupies.
+    // Rotation advance (#9) — the actual "next position, wrapping over
+    // archived-day gaps" rule lives in lib/rotation.ts so it's unit-tested;
+    // this block is just the DB fetch/write around it.
     const loggedDay = await tx.query.dayTemplates.findFirst({
       where: eq(dayTemplates.id, dayTemplateId),
     });
@@ -166,15 +161,16 @@ export async function logSession(
           eq(dayTemplates.programId, programId),
           eq(dayTemplates.isArchived, false),
         ),
-      )
-      .orderBy(asc(dayTemplates.position));
+      );
     if (loggedDay && activeDays.length > 0) {
-      const positions = activeDays.map((d) => d.position);
-      const index = positions.indexOf(loggedDay.position);
-      const nextIndex = index === -1 ? 0 : (index + 1) % positions.length;
       await tx
         .update(programs)
-        .set({ nextDayPosition: positions[nextIndex] })
+        .set({
+          nextDayPosition: nextDayPosition(
+            activeDays.map((d) => d.position),
+            loggedDay.position,
+          ),
+        })
         .where(eq(programs.id, programId));
     }
   });
