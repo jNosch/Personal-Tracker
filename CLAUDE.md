@@ -34,6 +34,10 @@ ERD and architecture-flow diagrams. See `docs/engineering/visual/`.
 
 GitHub Actions pipeline: triggers, jobs, env vars, branch protection. See `docs/engineering/ci.md`.
 
+### Session notes
+
+Scratch space for carrying context to the next session. See `docs/engineering/session-notes.md`. **Always clear it back to empty at the start of a session.** Only write to it at the end of a session, and only when the user explicitly asks — never automatically.
+
 ### General rules
 
 Package manager, migrations, secrets, and when to route work through `/grill-with-docs` or `/prototype`. See `docs/engineering/general.md`.
