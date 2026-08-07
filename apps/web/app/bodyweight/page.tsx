@@ -17,24 +17,28 @@ export default async function BodyweightPage() {
   return (
     <div
       style={{
-        padding: 24,
+        padding: 35,
         fontFamily: "sans-serif",
-        maxWidth: 480,
+        maxWidth: 700,
         margin: "0 auto",
       }}
     >
-      <h1 style={{ fontSize: 20, marginBottom: 16 }}>Bodyweight</h1>
+      <h1 style={{ fontSize: 29, marginBottom: 23 }}>Bodyweight</h1>
 
       <form
         action={addBodyweightEntry}
-        style={{ display: "flex", gap: 8, marginBottom: 20 }}
+        style={{ display: "flex", gap: 12, marginBottom: 29 }}
       >
         <input
           type="date"
           name="entryDate"
           defaultValue={today}
           required
-          style={{ padding: "6px 8px", border: "1px solid #ccc" }}
+          style={{
+            padding: "9px 12px",
+            fontSize: 17,
+            border: "1px solid #ccc",
+          }}
         />
         <input
           type="number"
@@ -42,7 +46,12 @@ export default async function BodyweightPage() {
           step="0.1"
           placeholder="kg"
           required
-          style={{ padding: "6px 8px", border: "1px solid #ccc", width: 90 }}
+          style={{
+            padding: "9px 12px",
+            fontSize: 17,
+            border: "1px solid #ccc",
+            width: 130,
+          }}
         />
         <button type="submit" style={btnStyle}>
           + Add
@@ -50,7 +59,7 @@ export default async function BodyweightPage() {
       </form>
 
       {entries.length === 0 ? (
-        <p style={{ color: "#999", fontSize: 14 }}>No entries yet.</p>
+        <p style={{ color: "#999", fontSize: 20 }}>No entries yet.</p>
       ) : (
         <ul style={{ listStyle: "none" }}>
           {entries.map((entry) => (
@@ -60,11 +69,11 @@ export default async function BodyweightPage() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                padding: "8px 12px",
+                padding: "12px 17px",
                 border: "1px solid #e5e5e5",
-                borderRadius: 8,
-                marginBottom: 6,
-                fontSize: 14,
+                borderRadius: 12,
+                marginBottom: 9,
+                fontSize: 20,
               }}
             >
               <span>{entry.entryDate}</span>
@@ -73,7 +82,7 @@ export default async function BodyweightPage() {
                 <button
                   type="submit"
                   style={{
-                    fontSize: 11,
+                    fontSize: 16,
                     color: "#dc2626",
                     background: "none",
                     border: "none",
@@ -92,9 +101,9 @@ export default async function BodyweightPage() {
 }
 
 const btnStyle = {
-  padding: "6px 12px",
-  fontSize: 12,
-  borderRadius: 5,
+  padding: "9px 17px",
+  fontSize: 17,
+  borderRadius: 7,
   border: "none",
   background: "#111",
   color: "#fff",
