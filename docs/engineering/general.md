@@ -4,7 +4,7 @@ These engineering docs are living — as the project grows, expand this file (or
 
 ## Implementation approach
 
-- **Spec-driven**: implementation work traces back to a resolved wayfinder ticket or an explicit ask — never freelanced mid-session. If a piece of work doesn't map to a decided spec, stop and resolve the spec first (`/grill-with-docs`) rather than guessing.
+- **Spec-driven**: implementation work traces back to a resolved wayfinder ticket or an explicit ask — never freelanced mid-session. If a piece of work doesn't map to a decided spec, stop and resolve the spec first (`/grill-with-docs`) rather than guessing. **Exception: `docs/engineering/*.md` and other engineering guideline docs are exempt** — early-stage housekeeping like this can ride along on whatever feature branch is open, or land straight on `develop`, without a dedicated ticket.
 - **Vertical slices, not big-bang changes**: build one feature/slice at a time — a thin, working path through the stack (schema → domain logic → route) — rather than attempting several features or a large multi-part change in one pass. Smaller slices are easier to review, easier to revert, and match the one-feature-branch-per-ticket branching model.
 
 ## Rules
