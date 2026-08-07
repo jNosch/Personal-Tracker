@@ -24,6 +24,7 @@ Free-form, imperative summary — no enforced `feat:`/`fix:` prefix. Always lead
 2. Run `/code-review` on the branch. This is a solo project with no second human reviewer — `/code-review`'s Standards + Spec pass substitutes for one. Resolve or consciously acknowledge every finding.
 3. **Ask before opening the PR** — an agent never opens a PR unprompted, even once lint/types/review are clean.
 4. **Merging is manual, human-only.** The repo owner is the sole approver and the only one who clicks merge — **squash merge**, PR title becomes the resulting commit on `develop`. An agent never self-approves or merges its own PR.
+5. **Delete the branch (local + remote) once merged.** Default is delete, not keep — the opposite of `prototype/*`. Exception is opt-in and human-called: if the repo owner wants a specific feature/bugfix branch kept around, they say so; an agent never decides on its own to keep one.
 
 **`develop` → `master`**
 Opened deliberately when a milestone is hit, not on a schedule. **Merge commit**, not squash — `master`'s history should show the individual `develop` commits that made up the milestone, unlike the collapsed feature merges below it.
