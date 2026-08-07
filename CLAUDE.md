@@ -38,6 +38,10 @@ GitHub Actions pipeline: triggers, jobs, env vars, branch protection. See `docs/
 
 Scratch space for carrying context to the next session. See `docs/engineering/session-notes.md`. **Always clear it back to empty at the start of a session.** Only write to it at the end of a session, and only when the user explicitly asks — never automatically.
 
+### Known issues
+
+Persistent knowledge about ongoing problems and accepted tech debt, not cleared between sessions. See `docs/engineering/known-issues.md`.
+
 ### General rules
 
 Package manager, migrations, secrets, and when to route work through `/grill-with-docs` or `/prototype`. See `docs/engineering/general.md`.
