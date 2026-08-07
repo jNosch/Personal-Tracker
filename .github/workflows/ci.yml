@@ -27,9 +27,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` input — pnpm/action-setup reads it from package.json's
+      # packageManager field, and setting it here too now errors as a
+      # conflicting duplicate spec.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
@@ -63,9 +64,10 @@ jobs:
       TEST_DATABASE_URL: postgres://dev:dev@localhost:5432/lifting_tracker_test
     steps:
       - uses: actions/checkout@v4
+      # No `version:` input — pnpm/action-setup reads it from package.json's
+      # packageManager field, and setting it here too now errors as a
+      # conflicting duplicate spec.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
@@ -78,9 +80,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` input — pnpm/action-setup reads it from package.json's
+      # packageManager field, and setting it here too now errors as a
+      # conflicting duplicate spec.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
