@@ -26,6 +26,10 @@ Naming, comment philosophy, and file organization. See `docs/engineering/code-co
 
 Test concept, structure, and rules. See `docs/engineering/testing.md`.
 
+### Visual references
+
+ERD and architecture-flow diagrams. See `docs/engineering/visual/`.
+
 ### General rules
 
 Package manager, migrations, secrets, and when to route work through `/grill-with-docs` or `/prototype`. See `docs/engineering/general.md`.

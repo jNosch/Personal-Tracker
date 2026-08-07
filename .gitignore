@@ -27,6 +27,9 @@ out/
 build
 dist
 
+# graphify (local knowledge-graph cache, regeneratable)
+graphify-out/
+
 
 # Debug
 npm-debug.log*
