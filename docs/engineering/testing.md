@@ -29,11 +29,11 @@ Dedicated test database on the existing docker-compose Postgres instance (separa
 
 ## Coverage
 
-No enforced coverage percentage — a % threshold is a vanity metric with no CI to gate it, and chasing it produces low-value tests. Instead: every new/changed `lib/` function ships tests in the same PR (mirrors the vertical-slice rule in [general.md](./general.md)); `db/` schema changes get an integration test only when the change encodes behavior worth verifying.
+No enforced coverage percentage — a % threshold is a vanity metric, and chasing it produces low-value tests, whether or not CI could gate it. Instead: every new/changed `lib/` function ships tests in the same PR (mirrors the vertical-slice rule in [general.md](./general.md)); `db/` schema changes get an integration test only when the change encodes behavior worth verifying.
 
 ## Workflow
 
-Same honor-system step as lint/check-types in the [PR checklist](./git-workflow.md): `pnpm test` always, `pnpm test:integration` when the PR touches `db/`. No CI wired up yet — revisit both when one exists.
+Same step as lint/check-types in the [PR checklist](./git-workflow.md): `pnpm test` always, `pnpm test:integration` when the PR touches `db/`. [CI](./ci.md) now enforces both automatically as a required check on `develop`/`master` — running locally first is still worth it for faster feedback, just no longer the only enforcement.
 
 ## Agent note
 
