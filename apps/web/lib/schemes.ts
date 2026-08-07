@@ -62,6 +62,15 @@ export interface WaveWeekSet {
   repTarget: number | "AMRAP";
 }
 
+export interface WaveSupplementalConfig {
+  setCount: number;
+  repTarget: number;
+  // Only meaningful for "bbb" (default 50) and "custom" (required there).
+  // "fsl"/"ssl" ignore this — their percentage is pegged to that week's
+  // first/second main-set percentage instead (#16).
+  percentage?: number;
+}
+
 export interface WaveConfig {
   trainingMaxPercentage: number;
   deloadMode: "always" | "never" | "on_regression";
@@ -69,6 +78,10 @@ export interface WaveConfig {
   usePreset: boolean;
   weekTable: WaveWeekSet[][];
   supplementalSetType: "none" | "bbb" | "fsl" | "ssl" | "custom";
+  // Optional: existing exercise-in-day rows from before this field existed
+  // have none. prescribe() falls back to the classic per-type default
+  // (buildSupplementalSets below) rather than requiring a migration.
+  supplementalConfig?: WaveSupplementalConfig;
 }
 
 export type SchemeConfig =
@@ -144,4 +157,412 @@ export function defaultConfigFor(type: SchemeType): SchemeConfig {
     case "failure_sets":
       return { type, config: { setCount: 3 } };
   }
+}
+
+// --- prescribe/update runtime (#29) ---
+//
+// Every scheme's state starts as {} (see app/programs/actions.ts's
+// addExerciseInDay/updateExerciseScheme) — there is no first-time-setup
+// step. So every state field below is optional, and prescribe()/update()
+// treat a missing value as "not yet bootstrapped" rather than an error:
+// prescribe shows 0kg/blank, and whatever the user actually logs that first
+// session seeds state going forward. Wave is the one exception — its
+// training max is explicitly locked as manual-entry-only (#16), surfaced
+// via the setTrainingMax action in app/log/actions.ts, never inferred from
+// a logged set.
+
+export interface DoubleProgressionState {
+  currentWeightKg?: number;
+  currentRepTarget?: number;
+}
+
+export interface RepAccumulationState {
+  currentWeightKg?: number;
+}
+
+export interface TopsetBackoffState {
+  currentWeightKg?: number;
+  currentRepTarget?: number;
+}
+
+// No-op scheme (#19) — genuinely has no state to carry.
+export type FailureSetsState = Record<string, never>;
+
+export interface WaveState {
+  trainingMaxKg?: number;
+  // Index into config.weekTable for the next occurrence, ignored while
+  // inDeload is true.
+  weekIndex?: number;
+  inDeload?: boolean;
+}
+
+export type SchemeState =
+  | DoubleProgressionState
+  | RepAccumulationState
+  | TopsetBackoffState
+  | FailureSetsState
+  | WaveState;
+
+// What prescribe() hands the UI for one set. null weight/repTarget means
+// "nothing to log" (Failure Sets only, #19) — the UI renders no input at
+// all for those, not even an optional one.
+export interface PrescribedSet {
+  setNumber: number;
+  prescribedWeightKg: number | null;
+  repTarget: number | "AMRAP" | null;
+  // Stamped statically here for schemes that designate specific sets (Wave's
+  // AMRAP sets, every Rep Accumulation set, Top-set's top set). Double
+  // Progression never designates anything here — its sets qualify via the
+  // reps-≤10 fallback, resolved at save time once actual reps are known
+  // (see resolveCountsTowardOneRm in lib/oneRm.ts), not at prescribe time.
+  countsTowardOneRm: boolean;
+}
+
+// What update() needs from a session's actual results. actualWeightKg is
+// read (not just repsAchieved) because it's also the bootstrap source for
+// state that hasn't been set yet (see file-header note).
+export interface LoggedSetInput {
+  setNumber: number;
+  repsAchieved: number | null;
+  actualWeightKg: number | null;
+}
+
+// Nearest-plate rounding for computed prescriptions (Wave's percentage
+// math, Top-set's back-off percentage). 0.5kg isn't locked by any ticket —
+// inferred as a reasonable default for microloaded plates; the value is
+// always overridable at log time regardless. Exported for
+// app/log/actions.ts's Wave training-max entry, which does the same
+// trainingMaxPercentage% x 1RM math outside prescribe/update.
+export function roundToNearest(value: number, increment: number): number {
+  return Math.round(value / increment) * increment;
+}
+
+function prescribeDoubleProgression(
+  config: DoubleProgressionConfig,
+  state: DoubleProgressionState,
+): PrescribedSet[] {
+  const weight = state.currentWeightKg ?? 0;
+  const repTarget = state.currentRepTarget ?? config.repRangeLow;
+  return Array.from({ length: config.setCount }, (_, i) => ({
+    setNumber: i + 1,
+    prescribedWeightKg: weight,
+    repTarget,
+    countsTowardOneRm: false,
+  }));
+}
+
+// Every set hitting the current target climbs it by one; hitting it while
+// already at the range's top bumps weight and resets to the bottom.
+// Falling short (or an empty session) makes no change — retry identically
+// next time. No plateau/deload logic, by design (#8).
+function updateDoubleProgression(
+  config: DoubleProgressionConfig,
+  state: DoubleProgressionState,
+  sets: LoggedSetInput[],
+): DoubleProgressionState {
+  const currentWeightKg = state.currentWeightKg ?? sets[0]?.actualWeightKg ?? 0;
+  const currentRepTarget = state.currentRepTarget ?? config.repRangeLow;
+  const allHitTarget =
+    sets.length > 0 &&
+    sets.every((s) => (s.repsAchieved ?? 0) >= currentRepTarget);
+  if (!allHitTarget) return { currentWeightKg, currentRepTarget };
+  if (currentRepTarget >= config.repRangeHigh) {
+    return {
+      currentWeightKg: currentWeightKg + config.weightIncrement,
+      currentRepTarget: config.repRangeLow,
+    };
+  }
+  return { currentWeightKg, currentRepTarget: currentRepTarget + 1 };
+}
+
+// No individual per-set rep target — every set is "just perform a set at
+// current_weight" (#17). All sets are program-designated toward 1RM
+// regardless of position, since reps typically decline across sets and the
+// already-locked "highest estimate wins" aggregation picks whichever one
+// actually performed best that session.
+function prescribeRepAccumulation(
+  config: RepAccumulationConfig,
+  state: RepAccumulationState,
+): PrescribedSet[] {
+  const weight = state.currentWeightKg ?? 0;
+  return Array.from({ length: config.setCount }, (_, i) => ({
+    setNumber: i + 1,
+    prescribedWeightKg: weight,
+    repTarget: null,
+    countsTowardOneRm: true,
+  }));
+}
+
+function updateRepAccumulation(
+  config: RepAccumulationConfig,
+  state: RepAccumulationState,
+  sets: LoggedSetInput[],
+): RepAccumulationState {
+  const currentWeightKg = state.currentWeightKg ?? sets[0]?.actualWeightKg ?? 0;
+  const totalReps = sets.reduce((sum, s) => sum + (s.repsAchieved ?? 0), 0);
+  if (totalReps >= config.targetTotalReps) {
+    return { currentWeightKg: currentWeightKg + config.weightIncrement };
+  }
+  return { currentWeightKg };
+}
+
+// Top set (set 1) climbs identically to Double Progression; back-off sets
+// are always derived from the top set's *prescribed* weight (state, not
+// whatever gets actually logged if overridden) with a fixed rep target, no
+// independent state (#18).
+function prescribeTopsetBackoff(
+  config: TopsetBackoffConfig,
+  state: TopsetBackoffState,
+): PrescribedSet[] {
+  const weight = state.currentWeightKg ?? 0;
+  const repTarget = state.currentRepTarget ?? config.topSetRepRangeLow;
+  const backoffWeight = roundToNearest(
+    (config.backoffPercentage / 100) * weight,
+    0.5,
+  );
+  const topSet: PrescribedSet = {
+    setNumber: 1,
+    prescribedWeightKg: weight,
+    repTarget,
+    countsTowardOneRm: true,
+  };
+  const backoffSets: PrescribedSet[] = Array.from(
+    { length: config.backoffSetCount },
+    (_, i) => ({
+      setNumber: i + 2,
+      prescribedWeightKg: backoffWeight,
+      repTarget: config.backoffRepTarget,
+      countsTowardOneRm: false,
+    }),
+  );
+  return [topSet, ...backoffSets];
+}
+
+function updateTopsetBackoff(
+  config: TopsetBackoffConfig,
+  state: TopsetBackoffState,
+  sets: LoggedSetInput[],
+): TopsetBackoffState {
+  const topSet = sets.find((s) => s.setNumber === 1);
+  const currentWeightKg = state.currentWeightKg ?? topSet?.actualWeightKg ?? 0;
+  const currentRepTarget = state.currentRepTarget ?? config.topSetRepRangeLow;
+  const hitTarget =
+    topSet !== undefined && (topSet.repsAchieved ?? 0) >= currentRepTarget;
+  if (!hitTarget) return { currentWeightKg, currentRepTarget };
+  if (currentRepTarget >= config.topSetRepRangeHigh) {
+    return {
+      currentWeightKg: currentWeightKg + config.weightIncrement,
+      currentRepTarget: config.topSetRepRangeLow,
+    };
+  }
+  return { currentWeightKg, currentRepTarget: currentRepTarget + 1 };
+}
+
+// Nothing tracked, nothing to prescribe beyond "how many sets" — no weight,
+// no reps, no state (#19). The UI reads prescribedWeightKg/repTarget === null
+// as "render no input, just a done mark."
+function prescribeFailureSets(config: FailureSetsConfig): PrescribedSet[] {
+  return Array.from({ length: config.setCount }, (_, i) => ({
+    setNumber: i + 1,
+    prescribedWeightKg: null,
+    repTarget: null,
+    countsTowardOneRm: false,
+  }));
+}
+
+// The fixed deload week: 40/50/60% x 5/5/5, no AMRAP (#16). Not a row in
+// weekTable — inserted here at prescribe time per deloadMode.
+const DELOAD_WEEK: WaveWeekSet[] = [
+  { percentageOfTrainingMax: 40, repTarget: 5 },
+  { percentageOfTrainingMax: 50, repTarget: 5 },
+  { percentageOfTrainingMax: 60, repTarget: 5 },
+];
+
+function buildSupplementalSets(
+  config: WaveConfig,
+  weekSets: WaveWeekSet[],
+  trainingMaxKg: number,
+  startSetNumber: number,
+): PrescribedSet[] {
+  if (config.supplementalSetType === "none") return [];
+
+  // Classic defaults (#16) when no override is configured — see
+  // WaveConfig.supplementalConfig's doc comment.
+  const supp: WaveSupplementalConfig = config.supplementalConfig ?? {
+    setCount: 5,
+    repTarget: config.supplementalSetType === "bbb" ? 10 : 5,
+  };
+
+  let percentage: number;
+  switch (config.supplementalSetType) {
+    case "bbb":
+      percentage = supp.percentage ?? 50;
+      break;
+    case "fsl":
+      percentage = weekSets[0]!.percentageOfTrainingMax;
+      break;
+    case "ssl":
+      percentage = (weekSets[1] ?? weekSets[0])!.percentageOfTrainingMax;
+      break;
+    case "custom":
+      percentage = supp.percentage ?? 0;
+      break;
+  }
+
+  const weight = roundToNearest((percentage / 100) * trainingMaxKg, 0.5);
+  return Array.from({ length: supp.setCount }, (_, i) => ({
+    setNumber: startSetNumber + i + 1,
+    prescribedWeightKg: weight,
+    repTarget: supp.repTarget,
+    countsTowardOneRm: false,
+  }));
+}
+
+function prescribeWave(config: WaveConfig, state: WaveState): PrescribedSet[] {
+  const trainingMaxKg = state.trainingMaxKg ?? 0;
+  const inDeload = state.inDeload ?? false;
+  const weekIndex = state.weekIndex ?? 0;
+  const weekSets = inDeload
+    ? DELOAD_WEEK
+    : (config.weekTable[weekIndex] ?? config.weekTable[0]!);
+
+  const mainSets: PrescribedSet[] = weekSets.map((s, i) => ({
+    setNumber: i + 1,
+    prescribedWeightKg: roundToNearest(
+      (s.percentageOfTrainingMax / 100) * trainingMaxKg,
+      0.5,
+    ),
+    repTarget: s.repTarget,
+    // Every AMRAP set counts toward 1RM regardless of week or rep count
+    // (#16 addendum) — without this, a low-percentage AMRAP set could log
+    // >10 reps and silently miss the reps-≤10 fallback, undermining the
+    // training-max recalculation below which depends on it.
+    countsTowardOneRm: s.repTarget === "AMRAP",
+  }));
+
+  if (inDeload) return mainSets;
+  return [
+    ...mainSets,
+    ...buildSupplementalSets(config, weekSets, trainingMaxKg, mainSets.length),
+  ];
+}
+
+// Advances one prescribed occurrence per call, matching the app's
+// one-update-per-logged-session model:
+//  - mid-cycle week just logged -> advance to the next week index.
+//  - last working week just logged -> recalc TM from its AMRAP set, then
+//    either enter deload (per deloadMode) or roll straight into next
+//    cycle's week 0.
+//  - deload week just logged -> always roll into next cycle's week 0, no
+//    recalculation (deload has no AMRAP to read, #16).
+function updateWave(
+  config: WaveConfig,
+  state: WaveState,
+  sets: LoggedSetInput[],
+): WaveState {
+  const trainingMaxKg = state.trainingMaxKg ?? 0;
+  const weekIndex = state.weekIndex ?? 0;
+  const inDeload = state.inDeload ?? false;
+
+  if (inDeload) {
+    return { trainingMaxKg, weekIndex: 0, inDeload: false };
+  }
+
+  const isLastWorkingWeek = weekIndex >= config.weekTable.length - 1;
+  if (!isLastWorkingWeek) {
+    return { trainingMaxKg, weekIndex: weekIndex + 1, inDeload: false };
+  }
+
+  const weekSets = config.weekTable[weekIndex]!;
+  const amrapSetNumber = weekSets.findIndex((s) => s.repTarget === "AMRAP") + 1;
+  const amrapLogged = sets.find((s) => s.setNumber === amrapSetNumber);
+  let newTrainingMaxKg = trainingMaxKg;
+  if (amrapLogged?.repsAchieved != null && amrapLogged.actualWeightKg != null) {
+    const estimate = epley1Rm(
+      amrapLogged.actualWeightKg,
+      amrapLogged.repsAchieved,
+    );
+    newTrainingMaxKg = roundToNearest(
+      (config.trainingMaxPercentage / 100) * estimate,
+      0.5,
+    );
+  }
+
+  const regressed = newTrainingMaxKg < trainingMaxKg;
+  const shouldDeload =
+    config.deloadMode === "always" ||
+    (config.deloadMode === "on_regression" && regressed);
+
+  if (shouldDeload) {
+    return { trainingMaxKg: newTrainingMaxKg, weekIndex, inDeload: true };
+  }
+  return { trainingMaxKg: newTrainingMaxKg, weekIndex: 0, inDeload: false };
+}
+
+/** state + config -> next occurrence's prescribed sets (#8). */
+export function prescribe(
+  scheme: SchemeConfig,
+  state: unknown,
+): PrescribedSet[] {
+  switch (scheme.type) {
+    case "double_progression":
+      return prescribeDoubleProgression(
+        scheme.config,
+        (state ?? {}) as DoubleProgressionState,
+      );
+    case "wave":
+      return prescribeWave(scheme.config, (state ?? {}) as WaveState);
+    case "rep_accumulation":
+      return prescribeRepAccumulation(
+        scheme.config,
+        (state ?? {}) as RepAccumulationState,
+      );
+    case "topset_backoff":
+      return prescribeTopsetBackoff(
+        scheme.config,
+        (state ?? {}) as TopsetBackoffState,
+      );
+    case "failure_sets":
+      return prescribeFailureSets(scheme.config);
+  }
+}
+
+/** actual logged performance -> new state (#8). */
+export function update(
+  scheme: SchemeConfig,
+  state: unknown,
+  sets: LoggedSetInput[],
+): SchemeState {
+  switch (scheme.type) {
+    case "double_progression":
+      return updateDoubleProgression(
+        scheme.config,
+        (state ?? {}) as DoubleProgressionState,
+        sets,
+      );
+    case "wave":
+      return updateWave(scheme.config, (state ?? {}) as WaveState, sets);
+    case "rep_accumulation":
+      return updateRepAccumulation(
+        scheme.config,
+        (state ?? {}) as RepAccumulationState,
+        sets,
+      );
+    case "topset_backoff":
+      return updateTopsetBackoff(
+        scheme.config,
+        (state ?? {}) as TopsetBackoffState,
+        sets,
+      );
+    case "failure_sets":
+      return {};
+  }
+}
+
+// Epley formula (#5): 1RM = weight x (1 + reps/30). Lives here (not
+// oneRm.ts) because Wave's training-max recalculation needs it internally;
+// re-exported from oneRm.ts as the single public entry point for the rest
+// of the app.
+export function epley1Rm(weightKg: number, reps: number): number {
+  return weightKg * (1 + reps / 30);
 }
