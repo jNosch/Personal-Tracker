@@ -30,6 +30,10 @@ Test concept, structure, and rules. See `docs/engineering/testing.md`.
 
 ERD and architecture-flow diagrams. See `docs/engineering/visual/`.
 
+### CI
+
+GitHub Actions pipeline: triggers, jobs, env vars, branch protection. See `docs/engineering/ci.md`.
+
 ### General rules
 
 Package manager, migrations, secrets, and when to route work through `/grill-with-docs` or `/prototype`. See `docs/engineering/general.md`.

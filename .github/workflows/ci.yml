@@ -1,0 +1,92 @@
+name: CI
+
+# PRs into develop/master only — not on every push to feature/*/bugfix/*.
+# See docs/engineering/ci.md.
+on:
+  pull_request:
+    branches: [develop, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # apps/web/db/client.ts throws if DATABASE_URL is unset at module-load
+  # time. Harmless today (nothing in app/ imports it yet), but next build
+  # actually evaluates route modules, so once a route imports db/client.ts
+  # this becomes load-bearing. Never connects — the `postgres` package
+  # connects lazily, so a syntactically-valid fake string is enough.
+  DATABASE_URL: postgres://build:build@localhost:5432/build
+
+jobs:
+  checks:
+    name: Lint, types, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # No `version:` input — pnpm/action-setup reads it from package.json's
+      # packageManager field, and setting it here too now errors as a
+      # conflicting duplicate spec.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm check-types
+      - run: pnpm test
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: dev
+          POSTGRES_PASSWORD: dev
+          POSTGRES_DB: lifting_tracker_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # The integration suite's own beforeAll (db/test-db.ts:migrateTestDb)
+      # applies migrations against this on every run — no separate migrate
+      # step needed here.
+      TEST_DATABASE_URL: postgres://dev:dev@localhost:5432/lifting_tracker_test
+    steps:
+      - uses: actions/checkout@v4
+      # No `version:` input — pnpm/action-setup reads it from package.json's
+      # packageManager field, and setting it here too now errors as a
+      # conflicting duplicate spec.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:integration
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # No `version:` input — pnpm/action-setup reads it from package.json's
+      # packageManager field, and setting it here too now errors as a
+      # conflicting duplicate spec.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build

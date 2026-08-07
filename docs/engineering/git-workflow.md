@@ -20,7 +20,7 @@ Free-form, imperative summary — no enforced `feat:`/`fix:` prefix. Always lead
 ## Pull requests
 
 **`feature/*` / `bugfix/*` → `develop`**
-1. Run `pnpm lint`, `pnpm check-types`, and `pnpm test` locally — all clean before opening the PR. Also run `pnpm test:integration` if the PR touches `db/`. No CI wired up yet, so this is on the honor system until one exists. See [testing.md](./testing.md).
+1. Run `pnpm lint`, `pnpm check-types`, `pnpm test`, and (if the PR touches `db/`) `pnpm test:integration` locally before opening the PR — see [testing.md](./testing.md). [CI](./ci.md) enforces lint/check-types/test/test:integration/build automatically as a required check on `develop`/`master`, so this is no longer purely honor-system; running locally first is still worth it for faster feedback than waiting on a CI run.
 2. Run `/code-review` on the branch. This is a solo project with no second human reviewer — `/code-review`'s Standards + Spec pass substitutes for one. Resolve or consciously acknowledge every finding.
 3. **Ask before opening the PR** — an agent never opens a PR unprompted, even once lint/types/review are clean.
 4. **Merging is manual, human-only.** The repo owner is the sole approver and the only one who clicks merge — **squash merge**, PR title becomes the resulting commit on `develop`. An agent never self-approves or merges its own PR.
