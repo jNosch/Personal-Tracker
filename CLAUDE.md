@@ -22,6 +22,10 @@ Branch model, naming, commit format, and PR/merge rules. See `docs/engineering/g
 
 Naming, comment philosophy, and file organization. See `docs/engineering/code-conventions.md`.
 
+### Testing
+
+Test concept, structure, and rules. See `docs/engineering/testing.md`.
+
 ### General rules
 
 Package manager, migrations, secrets, and when to route work through `/grill-with-docs` or `/prototype`. See `docs/engineering/general.md`.
