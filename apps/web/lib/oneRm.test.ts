@@ -103,6 +103,14 @@ describe("computeSessionOneRmKg", () => {
     // Total load = 80 + 20 = 100kg, same math as the non-bodyweight case above.
     expect(result).toBeCloseTo(epley1RmFor(100, 5), 2);
   });
+
+  it("returns null for a bodyweight-based exercise with no bodyweight logged yet, rather than assuming 0kg", () => {
+    const result = computeSessionOneRmKg(
+      [{ actualWeightKg: 20, repsAchieved: 5 }],
+      { isBodyweightBased: true },
+    );
+    expect(result).toBeNull();
+  });
 });
 
 function epley1RmFor(weightKg: number, reps: number): number {

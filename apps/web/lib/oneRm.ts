@@ -35,14 +35,26 @@ export function resolveCountsTowardOneRm(
 // Bodyweight-based exercises add the nearest weekly bodyweight log entry to
 // actualWeightKg before running Epley; the caller resolves "nearest entry"
 // (a DB query) and passes the resulting kg figure in.
+//
+// A bodyweight-based exercise with no bodyweightKg supplied (no bodyweight
+// ever logged yet) returns null rather than defaulting the load to 0kg —
+// silently computing an estimate off a fictitious 0kg bodyweight would
+// produce a real-looking but badly wrong number instead of correctly
+// reporting "not enough data yet."
 export function computeSessionOneRmKg(
   qualifyingSets: { actualWeightKg: number; repsAchieved: number }[],
   opts: { isBodyweightBased: boolean; bodyweightKg?: number },
 ): number | null {
   if (qualifyingSets.length === 0) return null;
+  if (opts.isBodyweightBased && opts.bodyweightKg === undefined) return null;
+  // Safe: the branch above already returned when isBodyweightBased is true
+  // and bodyweightKg is missing, so this fallback only ever applies to the
+  // non-bodyweight-based case, where it's unused (load uses actualWeightKg
+  // directly instead).
+  const bodyweightKg = opts.bodyweightKg ?? 0;
   const estimates = qualifyingSets.map((s) => {
     const load = opts.isBodyweightBased
-      ? (opts.bodyweightKg ?? 0) + s.actualWeightKg
+      ? bodyweightKg + s.actualWeightKg
       : s.actualWeightKg;
     return epley1Rm(load, s.repsAchieved);
   });
