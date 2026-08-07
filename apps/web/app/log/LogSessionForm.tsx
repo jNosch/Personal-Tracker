@@ -149,10 +149,10 @@ export default function LogSessionForm({
   return (
     <div
       style={{
-        padding: 20,
+        padding: 28,
         fontFamily: "monospace",
-        fontSize: 13,
-        maxWidth: 620,
+        fontSize: 19,
+        maxWidth: 900,
         margin: "0 auto",
         opacity: isPending ? 0.6 : 1,
       }}
@@ -162,7 +162,7 @@ export default function LogSessionForm({
           display: "flex",
           justifyContent: "space-between",
           alignItems: "baseline",
-          marginBottom: 16,
+          marginBottom: 22,
         }}
       >
         <div>
@@ -176,8 +176,9 @@ export default function LogSessionForm({
             value={date}
             onChange={(e) => setDate(e.target.value)}
             style={{
-              padding: "2px 4px",
+              padding: "4px 8px",
               fontFamily: "monospace",
+              fontSize: 17,
               border: "1px solid #ccc",
             }}
           />
@@ -193,13 +194,13 @@ export default function LogSessionForm({
             onSet={() => router.refresh()}
           />
         ) : (
-          <div key={ex.exerciseInDayId} style={{ marginBottom: 18 }}>
+          <div key={ex.exerciseInDayId} style={{ marginBottom: 26 }}>
             <div
               style={{
                 fontWeight: 700,
-                marginBottom: 4,
+                marginBottom: 6,
                 borderBottom: "1px solid #111",
-                paddingBottom: 2,
+                paddingBottom: 3,
               }}
             >
               {ex.exerciseName}
@@ -214,18 +215,18 @@ export default function LogSessionForm({
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 8,
-                    padding: "3px 0",
+                    gap: 12,
+                    padding: "5px 0",
                     borderBottom: "1px solid #f0f0f0",
                   }}
                 >
-                  <span style={{ width: 16, color: "#666" }}>
+                  <span style={{ width: 24, color: "#666" }}>
                     {set.setNumber}
                     {set.countsTowardOneRm && "*"}
                   </span>
                   {isFailureSet ? (
                     <label
-                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
                     >
                       <input
                         type="checkbox"
@@ -238,7 +239,7 @@ export default function LogSessionForm({
                     </label>
                   ) : (
                     <>
-                      <span style={{ width: 90, color: "#999" }}>
+                      <span style={{ width: 130, color: "#999" }}>
                         {set.prescribedWeightKg}×{set.repTarget ?? "—"}
                       </span>
                       <input
@@ -253,7 +254,7 @@ export default function LogSessionForm({
                           )
                         }
                         placeholder="kg"
-                        style={inputStyle(50)}
+                        style={inputStyle(74)}
                       />
                       <input
                         type="number"
@@ -267,7 +268,7 @@ export default function LogSessionForm({
                           )
                         }
                         placeholder="reps"
-                        style={inputStyle(46)}
+                        style={inputStyle(68)}
                       />
                       <input
                         type="number"
@@ -283,7 +284,7 @@ export default function LogSessionForm({
                           )
                         }
                         placeholder="rpe"
-                        style={inputStyle(40)}
+                        style={inputStyle(58)}
                       />
                     </>
                   )}
@@ -294,7 +295,7 @@ export default function LogSessionForm({
         ),
       )}
 
-      <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>
+      <div style={{ fontSize: 16, color: "#999", marginBottom: 17 }}>
         * counts toward 1RM
       </div>
 
@@ -302,7 +303,8 @@ export default function LogSessionForm({
         disabled={isPending || blockedOnTrainingMax}
         onClick={handleSave}
         style={{
-          padding: "6px 16px",
+          padding: "9px 24px",
+          fontSize: 19,
           background: "#111",
           color: "#fff",
           border: "none",
@@ -313,7 +315,7 @@ export default function LogSessionForm({
         save session
       </button>
       {blockedOnTrainingMax && (
-        <span style={{ fontSize: 11, color: "#999", marginLeft: 8 }}>
+        <span style={{ fontSize: 16, color: "#999", marginLeft: 12 }}>
           set training max above first
         </span>
       )}
@@ -339,20 +341,20 @@ function TrainingMaxPrompt({
   return (
     <div
       style={{
-        marginBottom: 18,
+        marginBottom: 26,
         border: "1px dashed #ccc",
         borderRadius: 4,
-        padding: 10,
+        padding: 14,
       }}
     >
-      <div style={{ fontWeight: 700, marginBottom: 6 }}>{exerciseName}</div>
-      <label style={{ fontSize: 12, color: "#666" }}>
+      <div style={{ fontWeight: 700, marginBottom: 9 }}>{exerciseName}</div>
+      <label style={{ fontSize: 17, color: "#666" }}>
         no training max set yet — enter current 1RM (kg){" "}
         <input
           type="number"
           value={oneRm}
           onChange={(e) => setOneRm(e.target.value)}
-          style={inputStyle(60)}
+          style={inputStyle(88)}
         />
       </label>
       <button
@@ -364,9 +366,9 @@ function TrainingMaxPrompt({
           })
         }
         style={{
-          marginLeft: 8,
-          padding: "3px 10px",
-          fontSize: 12,
+          marginLeft: 12,
+          padding: "5px 14px",
+          fontSize: 17,
           background: "#111",
           color: "#fff",
           border: "none",
@@ -383,8 +385,9 @@ function TrainingMaxPrompt({
 function inputStyle(width: number) {
   return {
     width,
-    padding: 2,
+    padding: 4,
     fontFamily: "monospace",
+    fontSize: 17,
     border: "1px solid #ccc",
   } as const;
 }
