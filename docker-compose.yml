@@ -10,6 +10,10 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Only runs on first init against an empty pgdata volume — if the
+      # volume already existed before this was added, create the test DB
+      # manually instead: docker compose exec postgres createdb -U dev lifting_tracker_test
+      - ./docker/initdb:/docker-entrypoint-initdb.d
 
 volumes:
   pgdata:
