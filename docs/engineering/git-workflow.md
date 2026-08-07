@@ -25,6 +25,7 @@ Free-form, imperative summary — no enforced `feat:`/`fix:` prefix. Always lead
 3. **Ask before opening the PR** — an agent never opens a PR unprompted, even once lint/types/review are clean.
 4. **Merging is manual, human-only.** The repo owner is the sole approver and the only one who clicks merge — **squash merge**, PR title becomes the resulting commit on `develop`. An agent never self-approves or merges its own PR.
 5. **Delete the branch (local + remote) once merged.** Default is delete, not keep — the opposite of `prototype/*`. Exception is opt-in and human-called: if the repo owner wants a specific feature/bugfix branch kept around, they say so; an agent never decides on its own to keep one.
+6. **Close the linked ticket once merged.** GitHub's `Closes #N` auto-close only fires on merge into the repo's *default* branch — `master`, not `develop` — so it never fires here; close it explicitly (`gh issue close`) instead of assuming it happened. Only close after the PR is actually merged, never before. If it's unclear whether the ticket's full scope actually landed, ask the repo owner first rather than guessing and closing it anyway.
 
 **`develop` → `master`**
 Opened deliberately when a milestone is hit, not on a schedule. **Merge commit**, not squash — `master`'s history should show the individual `develop` commits that made up the milestone, unlike the collapsed feature merges below it.

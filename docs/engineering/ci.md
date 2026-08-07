@@ -23,7 +23,9 @@ No migration step needed for `integration` — the suite's own `beforeAll` (`app
 
 ## Branch protection
 
-Required status check on both `develop` and `master` — all three jobs (`checks`, `integration`, `build`) block the merge button, not just informational. Configured via repo Settings → Branches (or `gh api`) once the workflow has run at least once (GitHub requires a check to have reported before it can be marked required).
+Required status check on both `develop` and `master` — all three jobs (`Lint, types, unit tests`, `Integration tests`, `Build`) block the merge button, not just informational. Applied via `gh api .../branches/<branch>/protection` after the workflow first ran on PR #28.
+
+`enforce_admins` is deliberately **off** on both branches — required status checks are evaluated at PR-merge time, not on a raw `git push`, so this doesn't affect the docs-can-land-directly-on-`develop` exemption in [general.md](./general.md). `enforce_admins: true` was tried first and rolled back: it would also bind the repo owner (an admin) to the PR-merge gate with no override, which conflicts with "the repo owner is the sole approver" in this workflow — off means the gate applies to the normal flow without a hard lock-out if something ever needs an admin override.
 
 ## No CD
 
