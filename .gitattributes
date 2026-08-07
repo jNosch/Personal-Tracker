@@ -1,0 +1,4 @@
+# Normalize all text files to LF in the repo and on checkout.
+# Prevents line-ending thrash between tools (Prettier writes LF) and
+# Windows' core.autocrlf (converts to CRLF on checkout).
+* text=auto eol=lf
