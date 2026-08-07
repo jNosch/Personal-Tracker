@@ -77,8 +77,17 @@ export default function ProgramEditor({
         opacity: isPending ? 0.6 : 1,
       }}
     >
-      <Link href="/programs" style={{ fontSize: 12, color: "#999" }}>
-        ← all programs
+      <Link
+        href="/programs"
+        style={{
+          display: "inline-block",
+          fontSize: 14,
+          fontWeight: 600,
+          color: "#fff",
+          marginBottom: 8,
+        }}
+      >
+        ← All Programs
       </Link>
 
       <ProgramHeader

@@ -54,32 +54,30 @@ export default async function ProgramsPage() {
       ) : (
         <ul style={{ listStyle: "none" }}>
           {allPrograms.map((program) => (
-            <li
-              key={program.id}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "10px 14px",
-                border: "1px solid #e5e5e5",
-                borderRadius: 8,
-                marginBottom: 8,
-                opacity: program.isArchived ? 0.5 : 1,
-              }}
-            >
+            <li key={program.id} style={{ marginBottom: 8 }}>
               <Link
                 href={`/programs/${program.id}`}
-                style={{ fontSize: 14, fontWeight: 600 }}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "10px 14px",
+                  border: "1px solid #e5e5e5",
+                  borderRadius: 8,
+                  opacity: program.isArchived ? 0.5 : 1,
+                  fontSize: 14,
+                  fontWeight: 600,
+                }}
               >
-                {program.name}
+                <span>{program.name}</span>
+                <span style={{ fontSize: 12, color: "#999", fontWeight: 400 }}>
+                  {program.isActive
+                    ? "active"
+                    : program.isArchived
+                      ? "archived"
+                      : "inactive"}
+                </span>
               </Link>
-              <span style={{ fontSize: 12, color: "#999" }}>
-                {program.isActive
-                  ? "active"
-                  : program.isArchived
-                    ? "archived"
-                    : "inactive"}
-              </span>
             </li>
           ))}
         </ul>
