@@ -6,7 +6,7 @@
 // — colocated here rather than lib/ (code-conventions.md: lib/ is for
 // business logic).
 
-import type { SeriesPoint } from "../../lib/progressRange";
+import { mondayTicks, type SeriesPoint } from "../../lib/progressRange";
 
 export interface DateDomain {
   start: string; // ISO date
@@ -80,4 +80,37 @@ export function combinedDomain(seriesList: SeriesPoint[][]): DateDomain | null {
     if (d > end) end = d;
   }
   return { start, end };
+}
+
+export interface AxisTick {
+  date: string; // ISO date
+  x: number;
+}
+
+// Which dates WeekAxis labels, and where. A tick per Monday in the domain
+// (see mondayTicks) when there is one; a short range with no Monday in it
+// falls back to labeling start/end instead — otherwise a chart whose data
+// all falls within one non-Monday week would show no axis at all (the real
+// bug this guards: single-day dev test data, a Friday). A single-day
+// domain has only one date to show, centered rather than pinned to
+// dateToX's zero-span left-edge fallback.
+export function weekAxisTicks(
+  domain: DateDomain,
+  width: number,
+  padding = 4,
+): AxisTick[] {
+  const mondays = mondayTicks(domain.start, domain.end);
+  if (mondays.length > 0) {
+    return mondays.map((date) => ({
+      date,
+      x: dateToX(date, domain, width, padding),
+    }));
+  }
+  if (domain.start === domain.end) {
+    return [{ date: domain.start, x: width / 2 }];
+  }
+  return [
+    { date: domain.start, x: dateToX(domain.start, domain, width, padding) },
+    { date: domain.end, x: dateToX(domain.end, domain, width, padding) },
+  ];
 }

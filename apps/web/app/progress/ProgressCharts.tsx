@@ -10,15 +10,14 @@ import { useState } from "react";
 import {
   computeDelta,
   filterByRange,
-  mondayTicks,
   RANGES,
   type RangeKey,
   type SeriesPoint,
 } from "../../lib/progressRange";
 import {
   combinedDomain,
-  dateToX,
   seriesToPath,
+  weekAxisTicks,
   type DateDomain,
 } from "./svg-path";
 
@@ -45,11 +44,10 @@ function formatShortDate(iso: string): string {
 }
 
 // Rough weekly axis: a tick + short date label per Monday in the chart's
-// date range (see mondayTicks). A short range with no Monday in it falls
-// back to labeling the domain's start/end instead — otherwise a chart
-// whose data all falls within one non-Monday week would show no axis at
-// all (the actual bug this fixes: single-day dev test data, a Friday).
-// Shared between both boxes.
+// date range, with fallback behavior for short/no-Monday/single-day ranges
+// — see svg-path.ts's weekAxisTicks for which dates get picked and why.
+// Shared between both boxes; this component only renders what that
+// (tested) function decides.
 function WeekAxis({
   domain,
   width,
@@ -62,28 +60,9 @@ function WeekAxis({
   padding?: number;
 }) {
   if (!domain) return null;
-  const mondays = mondayTicks(domain.start, domain.end);
-  const ticks: { date: string; x: number }[] =
-    mondays.length > 0
-      ? mondays.map((date) => ({
-          date,
-          x: dateToX(date, domain, width, padding),
-        }))
-      : domain.start === domain.end
-        ? [{ date: domain.start, x: width / 2 }]
-        : [
-            {
-              date: domain.start,
-              x: dateToX(domain.start, domain, width, padding),
-            },
-            {
-              date: domain.end,
-              x: dateToX(domain.end, domain, width, padding),
-            },
-          ];
   return (
     <>
-      {ticks.map(({ date, x }) => (
+      {weekAxisTicks(domain, width, padding).map(({ date, x }) => (
         <g key={date}>
           <line
             x1={x}
