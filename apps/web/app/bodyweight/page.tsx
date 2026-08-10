@@ -23,7 +23,7 @@ export default async function BodyweightPage() {
         margin: "0 auto",
       }}
     >
-      <h1 style={{ fontSize: 29, marginBottom: 23 }}>Bodyweight</h1>
+      <h1 style={{ fontSize: 20, marginBottom: 23 }}>Bodyweight</h1>
 
       <form
         action={addBodyweightEntry}
