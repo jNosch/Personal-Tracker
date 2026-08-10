@@ -48,3 +48,26 @@ export function computeDelta(series: SeriesPoint[]): number | null {
   const last = series[series.length - 1]!.value;
   return Math.round((last - first) * 10) / 10;
 }
+
+// Every Monday's ISO date within [startDate, endDate], inclusive of both
+// endpoints — the chart's "rough" weekly axis labels, deliberately not tied
+// to which days actually have a data point (that would misalign with an
+// irregular logging cadence). UTC throughout so it never drifts a day
+// depending on the caller's local timezone. Can return an empty array (a
+// short range with no Monday in it, or a single non-Monday day) — callers
+// needing an axis label regardless are responsible for their own fallback.
+export function mondayTicks(startDate: string, endDate: string): string[] {
+  if (startDate > endDate) return [];
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  const day = start.getUTCDay(); // 0=Sun..6=Sat
+  const daysToMonday = (8 - day) % 7; // 0 when start is already a Monday
+  const cursor = new Date(start);
+  cursor.setUTCDate(cursor.getUTCDate() + daysToMonday);
+  const ticks: string[] = [];
+  while (cursor <= end) {
+    ticks.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 7);
+  }
+  return ticks;
+}

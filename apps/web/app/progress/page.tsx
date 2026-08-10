@@ -1,9 +1,11 @@
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
   bodyweightEntries,
-  exercises,
+  dayTemplates,
+  exerciseInDay,
   oneRmEstimates,
+  programs,
   sessions,
 } from "../../db/schema";
 import ProgressCharts from "./ProgressCharts";
@@ -13,13 +15,36 @@ import type { SeriesPoint } from "../../lib/progressRange";
 export const dynamic = "force-dynamic";
 
 export default async function ProgressPage() {
-  const trackedExercises = await db
-    .select({ id: exercises.id, name: exercises.name })
-    .from(exercises)
-    .where(
-      and(eq(exercises.tracksOneRm, true), eq(exercises.isArchived, false)),
-    )
-    .orderBy(asc(exercises.name));
+  // Scoped to the active program's exercises, not every tracks_1rm exercise
+  // ever seeded — with 16 seeded exercises the unscoped list was too
+  // cluttered to read (see #31 follow-up discussion). No archived-history
+  // awareness needed here the way #12 rejected for the chart itself: this
+  // is just "what am I currently allowed to toggle," and switching programs
+  // naturally changes that.
+  const activeProgram = await db.query.programs.findFirst({
+    where: eq(programs.isActive, true),
+    with: {
+      dayTemplates: {
+        where: eq(dayTemplates.isArchived, false),
+        with: {
+          exercises: {
+            where: eq(exerciseInDay.isArchived, false),
+            with: { exercise: true },
+          },
+        },
+      },
+    },
+  });
+
+  const trackedExercises = activeProgram
+    ? dedupeById(
+        activeProgram.dayTemplates
+          .flatMap((d) => d.exercises)
+          .map((e) => e.exercise)
+          .filter((ex) => ex.tracksOneRm && !ex.isArchived)
+          .map((ex) => ({ id: ex.id, name: ex.name })),
+      ).sort((a, b) => a.name.localeCompare(b.name))
+    : [];
 
   // One row per (exercise, session) already (schema's unique index); join
   // sessions for the date and sort ascending so it's chart-ready without a
@@ -64,6 +89,16 @@ export default async function ProgressPage() {
       exercises={trackedExercises}
       oneRmSeries={oneRmSeries}
       bodyweightSeries={bodyweightSeries}
+      hasActiveProgram={activeProgram !== undefined}
     />
   );
+}
+
+// An exercise can appear in more than one day template of the same program
+// (e.g. Bench Press on both an upper day and a push day) — one checkbox per
+// exercise, not one per appearance.
+function dedupeById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Map<string, T>();
+  for (const item of items) seen.set(item.id, item);
+  return [...seen.values()];
 }
