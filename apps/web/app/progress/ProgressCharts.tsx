@@ -210,12 +210,14 @@ const PALETTE = [
   "#0891b2",
 ];
 
-// Total <svg> width — unchanged from before #44, so the box's overall
-// footprint (and the page's maxWidth layout) doesn't move. YAxis's left
-// margin is carved OUT of this budget (see PLOT_W), not added on top of
-// it — adding it on top was the actual bug: it pushed the box past the
-// page's own maxWidth and everything visibly overshot the right edge.
-const CHART_W = 700;
+// Total <svg> width. The box wrapping it has border(1) + padding(16) on
+// each side (border-box), sitting inside a maxWidth:760/padding:24
+// container — 760 - 24*2 - (1+16)*2 = 678px is genuinely available inside
+// the box. 700 overshot that by 22px (the box grows to fit non-shrinkable
+// svg content, pushing past the header row above it, which isn't
+// similarly constrained). 660 leaves a small margin rather than being an
+// exact fit to that number.
+const CHART_W = 660;
 const CHART_H = 300;
 const BW_H = 120;
 // Extra strip below the plotted line, reserved for WeekAxis's ticks and
