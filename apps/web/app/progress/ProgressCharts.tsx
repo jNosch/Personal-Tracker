@@ -5,8 +5,11 @@
 // overlay box + separate bodyweight box, global time-range tabs, per-metric
 // delta badges). No program-boundary awareness and no volume — both
 // deliberately cut, see #31/#12/#6.
+//
+// #44 adds hover tooltips (nearest-line lookup) and fixed-step Y-axis
+// gridlines to both boxes.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   computeDelta,
   filterByRange,
@@ -16,7 +19,10 @@ import {
 } from "../../lib/progressRange";
 import {
   combinedDomain,
+  gridlineValues,
+  nearestHoverPoint,
   seriesToPath,
+  valueToY,
   weekAxisTicks,
   type DateDomain,
 } from "./svg-path";
@@ -86,6 +92,112 @@ function WeekAxis({
   );
 }
 
+// Fixed-step horizontal gridlines + left-edge value labels (#44) — a
+// "raster" for rough at-a-glance reading of absolute values, not just
+// relative trend shape. Fixed step size per box (5kg exercises, 1kg
+// bodyweight — see ProgressCharts's Y_STEP constants), not derived/"nice
+// number"-rounded from the data range, per #44's resolved spec.
+function YAxis({
+  min,
+  max,
+  step,
+  plotWidth,
+  plotHeight,
+  padding = 12,
+}: {
+  min: number;
+  max: number;
+  step: number;
+  plotWidth: number;
+  plotHeight: number;
+  padding?: number;
+}) {
+  return (
+    <>
+      {gridlineValues(min, max, step).map((v) => {
+        const y = valueToY(v, min, max, plotHeight, padding);
+        return (
+          <g key={v}>
+            <line
+              x1={0}
+              y1={y}
+              x2={plotWidth}
+              y2={y}
+              stroke="#e5e5e5"
+              strokeWidth={1}
+            />
+            <text
+              x={-6}
+              y={y}
+              textAnchor="end"
+              dominantBaseline="middle"
+              fontSize={10}
+              fill="#999"
+            >
+              {v}
+            </text>
+          </g>
+        );
+      })}
+    </>
+  );
+}
+
+interface HoverState {
+  x: number;
+  y: number;
+  label: string;
+  color: string;
+}
+
+// Marker dot + label bubble at the hovered point (#44). The bubble is a
+// solid fill behind its own text — unlike a thin line, an opaque box has
+// strong contrast against light or dark backgrounds regardless of the
+// page's theme, so this doesn't need the same light/dark-aware color pick
+// #41 needed for a thin stroke.
+function HoverTooltip({
+  x,
+  y,
+  label,
+  color,
+  plotWidth,
+}: HoverState & { plotWidth: number }) {
+  const boxWidth = label.length * 6 + 16;
+  const boxHeight = 22;
+  const boxX = Math.min(Math.max(x - boxWidth / 2, 0), plotWidth - boxWidth);
+  const boxY = Math.max(y - boxHeight - 10, 0);
+  return (
+    <g pointerEvents="none">
+      <circle
+        cx={x}
+        cy={y}
+        r={4}
+        fill={color}
+        stroke="#fff"
+        strokeWidth={1.5}
+      />
+      <rect
+        x={boxX}
+        y={boxY}
+        width={boxWidth}
+        height={boxHeight}
+        rx={4}
+        fill="#111"
+        opacity={0.9}
+      />
+      <text
+        x={boxX + 8}
+        y={boxY + boxHeight / 2}
+        dominantBaseline="middle"
+        fontSize={11}
+        fill="#fff"
+      >
+        {label}
+      </text>
+    </g>
+  );
+}
+
 // Cycled by index rather than mapped per-exercise-id — exercises are
 // user-defined (seeded, not a fixed set like the prototype's four), so
 // there's no stable identity to hang a fixed color map off of.
@@ -98,13 +210,39 @@ const PALETTE = [
   "#0891b2",
 ];
 
-const CHART_W = 700;
+// Total <svg> width. The box wrapping it has border(1) + padding(16) on
+// each side (border-box), sitting inside a maxWidth:760/padding:24
+// container — 760 - 24*2 - (1+16)*2 = 678px is genuinely available inside
+// the box. 700 overshot that by 22px (the box grows to fit non-shrinkable
+// svg content, pushing past the header row above it, which isn't
+// similarly constrained). 660 leaves a small margin rather than being an
+// exact fit to that number.
+const CHART_W = 660;
 const CHART_H = 300;
 const BW_H = 120;
 // Extra strip below the plotted line, reserved for WeekAxis's ticks and
 // date labels. Kept constant regardless of whether there's data to show an
 // axis for, so toggling checkboxes never shifts the chart's overall height.
 const AXIS_H = 24;
+// Left margin reserved for YAxis's value labels — same reasoning as AXIS_H,
+// but subtracted from CHART_W rather than added to it (see above).
+const AXIS_W = 40;
+// Actual plotting width once AXIS_W's margin is carved out — every line,
+// gridline, tick, and hover lookup operates in this width, not CHART_W.
+const PLOT_W = CHART_W - AXIS_W;
+// Fixed Y-axis gridline step (#44) — same 10kg step for both boxes. The
+// original 5kg/1kg split (per box's own typical range) produced far too
+// many overlapping gridlines once the visible range actually got wide —
+// found during implementation, corrected to a coarser shared step that
+// stays readable at realistic ranges.
+const Y_STEP = 10;
+// Subtle, thick-but-translucent data lines (post-implementation feedback)
+// so they read clearly without visually fighting the gridlines behind them.
+const LINE_WIDTH = 3.5;
+const LINE_OPACITY = 0.7;
+// Distinct color, not a gray — a muted gray line was hard to distinguish
+// against the near-white gridlines/background depending on viewer theme.
+const BODYWEIGHT_COLOR = "#db2777";
 
 export interface ExerciseOption {
   id: string;
@@ -155,6 +293,10 @@ export default function ProgressCharts({
     Object.fromEntries(exercises.map((ex) => [ex.id, true])),
   );
   const [range, setRange] = useState<RangeKey>("all");
+  const [exerciseHover, setExerciseHover] = useState<HoverState | null>(null);
+  const [bwHover, setBwHover] = useState<HoverState | null>(null);
+  const exerciseSvgRef = useRef<SVGSVGElement>(null);
+  const bwSvgRef = useRef<SVGSVGElement>(null);
 
   const activeExercises = exercises.filter((ex) => visible[ex.id]);
   const activeSliced = activeExercises.map((ex) => ({
@@ -168,6 +310,71 @@ export default function ProgressCharts({
 
   const bwSliced = filterByRange(bodyweightSeries, range);
   const bwDomain = combinedDomain([bwSliced]);
+  const bwValues = bwSliced.map((p) => p.value);
+  const bwMin = bwValues.length ? Math.min(...bwValues) : 0;
+  const bwMax = bwValues.length ? Math.max(...bwValues) : 1;
+
+  // #44: which line the cursor is nearest to, across whichever exercises
+  // are currently toggled on — "nearest line," not every toggled line at
+  // once (resolved spec). mouseX/mouseY are converted into the plot's own
+  // local coordinate space by subtracting AXIS_W, since the plot content
+  // renders inside a <g transform="translate(AXIS_W,0)"> to make room for
+  // YAxis's labels.
+  function handleExerciseMouseMove(e: React.MouseEvent<SVGSVGElement>) {
+    const rect = exerciseSvgRef.current?.getBoundingClientRect();
+    if (!rect || !oneRmDomain) return;
+    const mouseX = e.clientX - rect.left - AXIS_W;
+    const mouseY = e.clientY - rect.top;
+    const nearest = nearestHoverPoint(
+      activeSliced.map((s) => s.series),
+      oneRmDomain,
+      { min, max },
+      PLOT_W,
+      CHART_H,
+      12,
+      mouseX,
+      mouseY,
+    );
+    if (!nearest) {
+      setExerciseHover(null);
+      return;
+    }
+    const ex = activeExercises[nearest.seriesIndex]!;
+    const colorIndex = exercises.findIndex((e2) => e2.id === ex.id);
+    setExerciseHover({
+      x: nearest.x,
+      y: nearest.y,
+      color: PALETTE[colorIndex % PALETTE.length]!,
+      label: `${formatShortDate(nearest.point.date)} — ${ex.name}: ${nearest.point.value} kg`,
+    });
+  }
+
+  function handleBwMouseMove(e: React.MouseEvent<SVGSVGElement>) {
+    const rect = bwSvgRef.current?.getBoundingClientRect();
+    if (!rect || !bwDomain) return;
+    const mouseX = e.clientX - rect.left - AXIS_W;
+    const mouseY = e.clientY - rect.top;
+    const nearest = nearestHoverPoint(
+      [bwSliced],
+      bwDomain,
+      { min: bwMin, max: bwMax },
+      PLOT_W,
+      BW_H,
+      12,
+      mouseX,
+      mouseY,
+    );
+    if (!nearest) {
+      setBwHover(null);
+      return;
+    }
+    setBwHover({
+      x: nearest.x,
+      y: nearest.y,
+      color: BODYWEIGHT_COLOR,
+      label: `${formatShortDate(nearest.point.date)} — ${nearest.point.value} kg`,
+    });
+  }
 
   return (
     <div
@@ -275,48 +482,69 @@ export default function ProgressCharts({
                 );
               })}
             </div>
-            <svg width={CHART_W} height={CHART_H + AXIS_H}>
-              {oneRmDomain &&
-                activeSliced.map(({ ex, series }) => {
-                  const i = exercises.findIndex((e) => e.id === ex.id);
-                  return (
-                    <path
-                      key={ex.id}
-                      d={seriesToPath(
-                        series,
-                        oneRmDomain,
-                        CHART_W,
-                        CHART_H,
-                        12,
-                        {
-                          min,
-                          max,
-                        },
-                      )}
-                      fill="none"
-                      stroke={PALETTE[i % PALETTE.length]}
-                      strokeWidth={2}
-                    />
-                  );
-                })}
-              {allValues.length === 0 && (
-                <text
-                  x={CHART_W / 2}
-                  y={CHART_H / 2}
-                  textAnchor="middle"
-                  fill="#999"
-                  fontSize={13}
-                >
-                  {activeExercises.length === 0
-                    ? "Toggle an exercise above to see its trend"
-                    : "No logged data in this range yet"}
-                </text>
-              )}
-              <WeekAxis
-                domain={oneRmDomain}
-                width={CHART_W}
-                plotHeight={CHART_H}
-              />
+            <svg
+              ref={exerciseSvgRef}
+              width={CHART_W}
+              height={CHART_H + AXIS_H}
+              onMouseMove={handleExerciseMouseMove}
+              onMouseLeave={() => setExerciseHover(null)}
+            >
+              <g transform={`translate(${AXIS_W},0)`}>
+                {oneRmDomain && (
+                  <YAxis
+                    min={min}
+                    max={max}
+                    step={Y_STEP}
+                    plotWidth={PLOT_W}
+                    plotHeight={CHART_H}
+                  />
+                )}
+                {oneRmDomain &&
+                  activeSliced.map(({ ex, series }) => {
+                    const i = exercises.findIndex((e) => e.id === ex.id);
+                    return (
+                      <path
+                        key={ex.id}
+                        d={seriesToPath(
+                          series,
+                          oneRmDomain,
+                          PLOT_W,
+                          CHART_H,
+                          12,
+                          {
+                            min,
+                            max,
+                          },
+                        )}
+                        fill="none"
+                        stroke={PALETTE[i % PALETTE.length]}
+                        strokeWidth={LINE_WIDTH}
+                        opacity={LINE_OPACITY}
+                      />
+                    );
+                  })}
+                {allValues.length === 0 && (
+                  <text
+                    x={PLOT_W / 2}
+                    y={CHART_H / 2}
+                    textAnchor="middle"
+                    fill="#999"
+                    fontSize={13}
+                  >
+                    {activeExercises.length === 0
+                      ? "Toggle an exercise above to see its trend"
+                      : "No logged data in this range yet"}
+                  </text>
+                )}
+                <WeekAxis
+                  domain={oneRmDomain}
+                  width={PLOT_W}
+                  plotHeight={CHART_H}
+                />
+                {exerciseHover && (
+                  <HoverTooltip {...exerciseHover} plotWidth={PLOT_W} />
+                )}
+              </g>
             </svg>
             <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
               est. 1RM (kg), shared axis across toggled exercises
@@ -345,22 +573,43 @@ export default function ProgressCharts({
             No bodyweight entries in this range yet.
           </p>
         ) : (
-          <svg width={CHART_W} height={BW_H + AXIS_H}>
-            {bwDomain && (
-              <path
-                d={seriesToPath(bwSliced, bwDomain, CHART_W, BW_H, 12)}
-                fill="none"
-                // #41: was "#111" — near-black on a near-black dark-theme
-                // background (globals.css's prefers-color-scheme switch,
-                // see known-issues.md) made the line effectively invisible.
-                // Mid-gray keeps real contrast against both light and dark
-                // backgrounds, matching the muted-gray tones (#999/#666)
-                // already used for secondary text elsewhere on this page.
-                stroke="#888"
-                strokeWidth={2}
-              />
-            )}
-            <WeekAxis domain={bwDomain} width={CHART_W} plotHeight={BW_H} />
+          <svg
+            ref={bwSvgRef}
+            width={CHART_W}
+            height={BW_H + AXIS_H}
+            onMouseMove={handleBwMouseMove}
+            onMouseLeave={() => setBwHover(null)}
+          >
+            <g transform={`translate(${AXIS_W},0)`}>
+              {bwDomain && (
+                <YAxis
+                  min={bwMin}
+                  max={bwMax}
+                  step={Y_STEP}
+                  plotWidth={PLOT_W}
+                  plotHeight={BW_H}
+                />
+              )}
+              {bwDomain && (
+                <path
+                  d={seriesToPath(bwSliced, bwDomain, PLOT_W, BW_H, 12, {
+                    min: bwMin,
+                    max: bwMax,
+                  })}
+                  fill="none"
+                  // #41 originally set this to "#888" (mid-gray) to fix
+                  // invisibility against a dark theme; #44's gridlines then
+                  // made plain gray hard to distinguish from the grid, so
+                  // this moved to a distinct, non-gray color instead — see
+                  // BODYWEIGHT_COLOR.
+                  stroke={BODYWEIGHT_COLOR}
+                  strokeWidth={LINE_WIDTH}
+                  opacity={LINE_OPACITY}
+                />
+              )}
+              <WeekAxis domain={bwDomain} width={PLOT_W} plotHeight={BW_H} />
+              {bwHover && <HoverTooltip {...bwHover} plotWidth={PLOT_W} />}
+            </g>
           </svg>
         )}
       </div>

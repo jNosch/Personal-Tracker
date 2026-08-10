@@ -36,6 +36,38 @@ export function dateToX(
   return padding + frac * (width - padding * 2);
 }
 
+// x-pixel for the point at `index` within `series`. Same-day fallback
+// (#31): a zero-span domain can't distinguish more than one session logged
+// the same calendar day, so it spaces points evenly by position instead of
+// collapsing them onto one x. Shared by seriesToPath and nearestHoverPoint
+// so hovering always lines up with what's actually drawn, fallback or not.
+function xForPoint(
+  series: SeriesPoint[],
+  index: number,
+  domain: DateDomain,
+  width: number,
+  padding: number,
+): number {
+  if (domainSpanMs(domain) <= 0) {
+    const stepX = (width - padding * 2) / (series.length - 1 || 1);
+    return padding + index * stepX;
+  }
+  return dateToX(series[index]!.date, domain, width, padding);
+}
+
+// y-pixel for a data value within [min, max]. Extracted so seriesToPath,
+// YAxis's gridlines, and hover markers all agree on the exact same scale.
+export function valueToY(
+  value: number,
+  min: number,
+  max: number,
+  height: number,
+  padding = 4,
+): number {
+  const span = max - min || 1;
+  return height - padding - ((value - min) / span) * (height - padding * 2);
+}
+
 export function seriesToPath(
   series: SeriesPoint[],
   domain: DateDomain,
@@ -47,21 +79,9 @@ export function seriesToPath(
   if (series.length === 0) return "";
   const min = valueRange?.min ?? Math.min(...series.map((p) => p.value));
   const max = valueRange?.max ?? Math.max(...series.map((p) => p.value));
-  const span = max - min || 1;
-  // Day-granularity dates can't distinguish more than one session logged
-  // the same calendar day — a zero-span domain would otherwise collapse
-  // every point onto the same x and draw a vertical smear (the real bug
-  // this guards: dev test data with several sessions logged one Friday).
-  // Falls back to spacing points evenly by position instead, same as
-  // before real dates were plotted at all.
-  const evenlySpaced = domainSpanMs(domain) <= 0;
-  const stepX = (width - padding * 2) / (series.length - 1 || 1);
   const points = series.map((p, i) => {
-    const x = evenlySpaced
-      ? padding + i * stepX
-      : dateToX(p.date, domain, width, padding);
-    const y =
-      height - padding - ((p.value - min) / span) * (height - padding * 2);
+    const x = xForPoint(series, i, domain, width, padding);
+    const y = valueToY(p.value, min, max, height, padding);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
   return `M ${points.join(" L ")}`;
@@ -113,4 +133,78 @@ export function weekAxisTicks(
     { date: domain.start, x: dateToX(domain.start, domain, width, padding) },
     { date: domain.end, x: dateToX(domain.end, domain, width, padding) },
   ];
+}
+
+// Step-aligned reference values between min and max inclusive, for drawing
+// horizontal gridlines (#44) — e.g. gridlineValues(61, 88, 5) => [65, 70,
+// 75, 80, 85]. Fixed step size, not derived/"nice-rounded" from the data
+// range — deliberately simple, see #44's resolved spec.
+export function gridlineValues(
+  min: number,
+  max: number,
+  step: number,
+): number[] {
+  if (step <= 0 || max < min) return [];
+  const first = Math.ceil(min / step) * step;
+  const values: number[] = [];
+  for (let v = first; v <= max + 1e-9; v += step) {
+    values.push(Math.round(v * 1000) / 1000);
+  }
+  return values;
+}
+
+export interface HoverResult {
+  seriesIndex: number;
+  point: SeriesPoint;
+  x: number;
+  y: number;
+}
+
+// Finds the line nearest the cursor across one or more series already
+// plotted with seriesToPath's identical scale (#44's resolved "nearest
+// line, not every toggled line" hover behavior). For each series, first
+// finds its own nearest data point by x (time) distance, then across every
+// series' nearest point picks whichever is physically closest to the
+// cursor — so hovering near a point on one line doesn't accidentally
+// highlight a different line's point at a similar x.
+export function nearestHoverPoint(
+  seriesList: SeriesPoint[][],
+  domain: DateDomain,
+  valueRange: { min: number; max: number },
+  width: number,
+  height: number,
+  padding: number,
+  mouseX: number,
+  mouseY: number,
+): HoverResult | null {
+  let best: HoverResult | null = null;
+  let bestDist = Infinity;
+  seriesList.forEach((series, seriesIndex) => {
+    if (series.length === 0) return;
+    let nearestIndex = 0;
+    let nearestXDist = Infinity;
+    series.forEach((_, i) => {
+      const x = xForPoint(series, i, domain, width, padding);
+      const xDist = Math.abs(x - mouseX);
+      if (xDist < nearestXDist) {
+        nearestXDist = xDist;
+        nearestIndex = i;
+      }
+    });
+    const point = series[nearestIndex]!;
+    const x = xForPoint(series, nearestIndex, domain, width, padding);
+    const y = valueToY(
+      point.value,
+      valueRange.min,
+      valueRange.max,
+      height,
+      padding,
+    );
+    const dist = Math.hypot(x - mouseX, y - mouseY);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = { seriesIndex, point, x, y };
+    }
+  });
+  return best;
 }
