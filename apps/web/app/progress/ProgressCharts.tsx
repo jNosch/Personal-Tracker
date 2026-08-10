@@ -350,7 +350,13 @@ export default function ProgressCharts({
               <path
                 d={seriesToPath(bwSliced, bwDomain, CHART_W, BW_H, 12)}
                 fill="none"
-                stroke="#111"
+                // #41: was "#111" — near-black on a near-black dark-theme
+                // background (globals.css's prefers-color-scheme switch,
+                // see known-issues.md) made the line effectively invisible.
+                // Mid-gray keeps real contrast against both light and dark
+                // backgrounds, matching the muted-gray tones (#999/#666)
+                // already used for secondary text elsewhere on this page.
+                stroke="#888"
                 strokeWidth={2}
               />
             )}
