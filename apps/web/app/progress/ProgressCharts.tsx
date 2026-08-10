@@ -210,6 +210,11 @@ const PALETTE = [
   "#0891b2",
 ];
 
+// Total <svg> width — unchanged from before #44, so the box's overall
+// footprint (and the page's maxWidth layout) doesn't move. YAxis's left
+// margin is carved OUT of this budget (see PLOT_W), not added on top of
+// it — adding it on top was the actual bug: it pushed the box past the
+// page's own maxWidth and everything visibly overshot the right edge.
 const CHART_W = 700;
 const CHART_H = 300;
 const BW_H = 120;
@@ -217,8 +222,12 @@ const BW_H = 120;
 // date labels. Kept constant regardless of whether there's data to show an
 // axis for, so toggling checkboxes never shifts the chart's overall height.
 const AXIS_H = 24;
-// Left margin reserved for YAxis's value labels — same reasoning as AXIS_H.
+// Left margin reserved for YAxis's value labels — same reasoning as AXIS_H,
+// but subtracted from CHART_W rather than added to it (see above).
 const AXIS_W = 40;
+// Actual plotting width once AXIS_W's margin is carved out — every line,
+// gridline, tick, and hover lookup operates in this width, not CHART_W.
+const PLOT_W = CHART_W - AXIS_W;
 // Fixed Y-axis gridline step (#44) — same 10kg step for both boxes. The
 // original 5kg/1kg split (per box's own typical range) produced far too
 // many overlapping gridlines once the visible range actually got wide —
@@ -318,7 +327,7 @@ export default function ProgressCharts({
       activeSliced.map((s) => s.series),
       oneRmDomain,
       { min, max },
-      CHART_W,
+      PLOT_W,
       CHART_H,
       12,
       mouseX,
@@ -347,7 +356,7 @@ export default function ProgressCharts({
       [bwSliced],
       bwDomain,
       { min: bwMin, max: bwMax },
-      CHART_W,
+      PLOT_W,
       BW_H,
       12,
       mouseX,
@@ -473,7 +482,7 @@ export default function ProgressCharts({
             </div>
             <svg
               ref={exerciseSvgRef}
-              width={CHART_W + AXIS_W}
+              width={CHART_W}
               height={CHART_H + AXIS_H}
               onMouseMove={handleExerciseMouseMove}
               onMouseLeave={() => setExerciseHover(null)}
@@ -484,7 +493,7 @@ export default function ProgressCharts({
                     min={min}
                     max={max}
                     step={Y_STEP}
-                    plotWidth={CHART_W}
+                    plotWidth={PLOT_W}
                     plotHeight={CHART_H}
                   />
                 )}
@@ -497,7 +506,7 @@ export default function ProgressCharts({
                         d={seriesToPath(
                           series,
                           oneRmDomain,
-                          CHART_W,
+                          PLOT_W,
                           CHART_H,
                           12,
                           {
@@ -514,7 +523,7 @@ export default function ProgressCharts({
                   })}
                 {allValues.length === 0 && (
                   <text
-                    x={CHART_W / 2}
+                    x={PLOT_W / 2}
                     y={CHART_H / 2}
                     textAnchor="middle"
                     fill="#999"
@@ -527,11 +536,11 @@ export default function ProgressCharts({
                 )}
                 <WeekAxis
                   domain={oneRmDomain}
-                  width={CHART_W}
+                  width={PLOT_W}
                   plotHeight={CHART_H}
                 />
                 {exerciseHover && (
-                  <HoverTooltip {...exerciseHover} plotWidth={CHART_W} />
+                  <HoverTooltip {...exerciseHover} plotWidth={PLOT_W} />
                 )}
               </g>
             </svg>
@@ -564,7 +573,7 @@ export default function ProgressCharts({
         ) : (
           <svg
             ref={bwSvgRef}
-            width={CHART_W + AXIS_W}
+            width={CHART_W}
             height={BW_H + AXIS_H}
             onMouseMove={handleBwMouseMove}
             onMouseLeave={() => setBwHover(null)}
@@ -575,13 +584,13 @@ export default function ProgressCharts({
                   min={bwMin}
                   max={bwMax}
                   step={Y_STEP}
-                  plotWidth={CHART_W}
+                  plotWidth={PLOT_W}
                   plotHeight={BW_H}
                 />
               )}
               {bwDomain && (
                 <path
-                  d={seriesToPath(bwSliced, bwDomain, CHART_W, BW_H, 12, {
+                  d={seriesToPath(bwSliced, bwDomain, PLOT_W, BW_H, 12, {
                     min: bwMin,
                     max: bwMax,
                   })}
@@ -596,8 +605,8 @@ export default function ProgressCharts({
                   opacity={LINE_OPACITY}
                 />
               )}
-              <WeekAxis domain={bwDomain} width={CHART_W} plotHeight={BW_H} />
-              {bwHover && <HoverTooltip {...bwHover} plotWidth={CHART_W} />}
+              <WeekAxis domain={bwDomain} width={PLOT_W} plotHeight={BW_H} />
+              {bwHover && <HoverTooltip {...bwHover} plotWidth={PLOT_W} />}
             </g>
           </svg>
         )}
