@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import Nav, { NAV_HEIGHT } from "./Nav";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -23,8 +24,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable}`}
+        // Reserves space so the fixed bottom nav never overlaps the last
+        // bit of a page's content.
+        style={{ paddingBottom: NAV_HEIGHT }}
+      >
         {children}
+        <Nav />
       </body>
     </html>
   );
