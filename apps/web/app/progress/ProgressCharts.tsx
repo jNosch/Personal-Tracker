@@ -17,6 +17,7 @@ import {
   RANGES,
   type RangeKey,
   type SeriesPoint,
+  type SessionRpe,
 } from "../../lib/progressRange";
 import {
   combinedDomain,
@@ -244,6 +245,11 @@ const LINE_OPACITY = 0.7;
 // Distinct color, not a gray — a muted gray line was hard to distinguish
 // against the near-white gridlines/background depending on viewer theme.
 const BODYWEIGHT_COLOR = "#db2777";
+// A session average at or above this reads as near-maximal effort — the
+// "you might need a deload" signal RpeBox exists to surface (#56). Not a
+// resolved spec number, an implementation judgement call — easy to retune
+// since it's named, not scattered as a bare literal.
+const HIGH_RPE_THRESHOLD = 8.5;
 
 export interface ExerciseOption {
   id: string;
@@ -270,6 +276,12 @@ interface ProgressChartsProps {
   // different empty-state copy (see the showAllExercises/hasActiveProgram
   // three-way branch below).
   hasActiveProgram: boolean;
+  // #56: most recent RPE-logged sessions of the active program, oldest
+  // first, already averaged per session — display-only, doesn't feed any
+  // progression/estimate math. Empty when the active program has none
+  // logged; caller (page.tsx) only computes this at all when there's an
+  // active program, so RpeBox itself doesn't render otherwise (see below).
+  recentRpe: SessionRpe[];
 }
 
 function DeltaBadge({ value }: { value: number | null }) {
@@ -316,12 +328,65 @@ function BodyweightMultipleBadge({ value }: { value: number | null }) {
   );
 }
 
+// Small vertical sidebar next to the exercise overlay box (#56) — deliberately
+// separate from that box rather than merged into its header, since it's
+// scoped to the active program specifically, not to whichever exercises are
+// currently toggled. High RPE (>= 8.5, a near-maximal-effort set) gets a
+// warning color — unlike DeltaBadge/BodyweightMultipleBadge's deliberate
+// neutrality, this box exists specifically to flag "you might need a
+// deload," so a plain "here's a number" treatment would undersell the one
+// thing it's for.
+function RpeBox({ sessions }: { sessions: SessionRpe[] }) {
+  return (
+    <div
+      style={{
+        flex: "1 1 auto",
+        maxWidth: 220,
+        border: "1px solid #e5e5e5",
+        borderRadius: 8,
+        padding: 16,
+      }}
+    >
+      <h2 style={{ fontSize: 13, marginBottom: 10 }}>Recent RPE</h2>
+      {sessions.length === 0 ? (
+        <p style={{ color: "#999", fontSize: 12 }}>No RPE logged yet.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {sessions.map((s) => (
+            <div
+              key={s.sessionId}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: 12,
+              }}
+            >
+              <span style={{ color: "#999", whiteSpace: "nowrap" }}>
+                {formatShortDate(s.date)}
+              </span>
+              <span
+                style={{
+                  fontWeight: 600,
+                  color: s.avgRpe >= HIGH_RPE_THRESHOLD ? "#dc2626" : "#111",
+                }}
+              >
+                {s.avgRpe.toFixed(1)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProgressCharts({
   exercises,
   allExercises,
   oneRmSeries,
   bodyweightSeries,
   hasActiveProgram,
+  recentRpe,
 }: ProgressChartsProps) {
   // Default: everything toggled on. With a handful of tracked exercises
   // (the expected case for a single-user tracker) an overlay of all of them
@@ -426,7 +491,11 @@ export default function ProgressCharts({
       style={{
         padding: 24,
         fontFamily: "sans-serif",
-        maxWidth: 760,
+        // 920, not 760 (#56) — wide enough for RpeBox to sit beside the
+        // exercise box without shrinking it below its own tuned width; see
+        // CHART_W's comment for why that width is deliberate and shouldn't
+        // move to make room instead.
+        maxWidth: 920,
         margin: "0 auto",
       }}
     >
@@ -464,185 +533,214 @@ export default function ProgressCharts({
         boxes below.
       </p>
 
-      {/* Exercise overlay box */}
+      {/* Exercise overlay box + recent-RPE sidebar (#56) — flex row so the
+          sidebar sits beside it without shrinking the overlay box below its
+          own tuned width (flex: "0 0 auto" below). Row, not the overlay box
+          itself, carries the bottom margin now. */}
       <div
         style={{
-          border: "1px solid #e5e5e5",
-          borderRadius: 8,
-          padding: 16,
+          display: "flex",
+          gap: 16,
           marginBottom: 16,
+          alignItems: "flex-start",
         }}
       >
-        {/* #53: opt-in escape hatch from #31's active-program-only default
-            — outside the empty-state branch below so it's reachable even
-            when the active program has nothing tracked. */}
-        <label
+        <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 12,
-            color: "#666",
-            marginBottom: 10,
-            cursor: "pointer",
+            // Explicit width, not just flex: "0 0 auto" — without it, this
+            // box's width becomes shrink-to-fit around its own content
+            // (the checkbox row's natural single-line width, which can
+            // exceed CHART_W once several exercises/badges are toggled on)
+            // rather than staying pinned to the SVG's actual width,
+            // squeezing RpeBox narrower than intended and wrapping its
+            // date text (found live-testing #56). CHART_W + padding(32) +
+            // border(2), the same box-model math CHART_W's own comment
+            // already does for the container.
+            width: CHART_W + 34,
+            flex: "0 0 auto",
+            border: "1px solid #e5e5e5",
+            borderRadius: 8,
+            padding: 16,
           }}
         >
-          <input
-            type="checkbox"
-            checked={showAllExercises}
-            onChange={() => setShowAllExercises((v) => !v)}
-          />
-          Show all exercises (including archived programs)
-        </label>
-        {exerciseList.length === 0 ? (
-          <p style={{ color: "#999", fontSize: 13 }}>
-            {showAllExercises
-              ? "No 1RM-tracked exercises found across any program yet."
-              : hasActiveProgram
-                ? "No exercises in the active program are tracked for 1RM yet."
-                : "No active program. Activate one to see its exercises here."}
-          </p>
-        ) : (
-          <>
-            <div
-              style={{
-                display: "flex",
-                gap: 16,
-                marginBottom: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              {exerciseList.map((ex, i) => {
-                const rangeSeries = filterByRange(
-                  oneRmSeries[ex.id] ?? [],
-                  range,
-                );
-                const d = computeDelta(rangeSeries);
-                // #43: only non-bodyweight-based exercises, and only once
-                // there's at least one bodyweight entry anywhere — zero
-                // bodyweight data hides the badge entirely rather than
-                // showing "not enough data yet" for every exercise row.
-                // Also hidden when the exercise itself has zero 1RM data
-                // ever recorded (not just out of the current range) —
-                // otherwise it duplicates DeltaBadge's identical "not
-                // enough data yet" text right next to it, which reads as a
-                // glitch rather than two distinct metrics. A narrow range
-                // with *some* data elsewhere still shows the badge with its
-                // own null state (spec's resolved behavior) — this check is
-                // against the exercise's whole series, not rangeSeries.
-                const showBwMultiple =
-                  !ex.isBodyweightBased &&
-                  bodyweightSeries.length > 0 &&
-                  (oneRmSeries[ex.id]?.length ?? 0) > 0;
-                const bwMultiple = showBwMultiple
-                  ? computeBodyweightMultiple(rangeSeries, bodyweightSeries)
-                  : null;
-                const color = PALETTE[i % PALETTE.length]!;
-                return (
-                  <label
-                    key={ex.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontSize: 13,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={visible[ex.id] ?? false}
-                      onChange={() =>
-                        setVisible((v) => ({ ...v, [ex.id]: !v[ex.id] }))
-                      }
-                    />
-                    <span
+          {/* #53: opt-in escape hatch from #31's active-program-only default
+            — outside the empty-state branch below so it's reachable even
+            when the active program has nothing tracked. */}
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              color: "#666",
+              marginBottom: 10,
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showAllExercises}
+              onChange={() => setShowAllExercises((v) => !v)}
+            />
+            Show all exercises (including archived programs)
+          </label>
+          {exerciseList.length === 0 ? (
+            <p style={{ color: "#999", fontSize: 13 }}>
+              {showAllExercises
+                ? "No 1RM-tracked exercises found across any program yet."
+                : hasActiveProgram
+                  ? "No exercises in the active program are tracked for 1RM yet."
+                  : "No active program. Activate one to see its exercises here."}
+            </p>
+          ) : (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 16,
+                  marginBottom: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                {exerciseList.map((ex, i) => {
+                  const rangeSeries = filterByRange(
+                    oneRmSeries[ex.id] ?? [],
+                    range,
+                  );
+                  const d = computeDelta(rangeSeries);
+                  // #43: only non-bodyweight-based exercises, and only once
+                  // there's at least one bodyweight entry anywhere — zero
+                  // bodyweight data hides the badge entirely rather than
+                  // showing "not enough data yet" for every exercise row.
+                  // Also hidden when the exercise itself has zero 1RM data
+                  // ever recorded (not just out of the current range) —
+                  // otherwise it duplicates DeltaBadge's identical "not
+                  // enough data yet" text right next to it, which reads as a
+                  // glitch rather than two distinct metrics. A narrow range
+                  // with *some* data elsewhere still shows the badge with its
+                  // own null state (spec's resolved behavior) — this check is
+                  // against the exercise's whole series, not rangeSeries.
+                  const showBwMultiple =
+                    !ex.isBodyweightBased &&
+                    bodyweightSeries.length > 0 &&
+                    (oneRmSeries[ex.id]?.length ?? 0) > 0;
+                  const bwMultiple = showBwMultiple
+                    ? computeBodyweightMultiple(rangeSeries, bodyweightSeries)
+                    : null;
+                  const color = PALETTE[i % PALETTE.length]!;
+                  return (
+                    <label
+                      key={ex.id}
                       style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 5,
-                        background: color,
-                        display: "inline-block",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 13,
+                        cursor: "pointer",
                       }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={visible[ex.id] ?? false}
+                        onChange={() =>
+                          setVisible((v) => ({ ...v, [ex.id]: !v[ex.id] }))
+                        }
+                      />
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 5,
+                          background: color,
+                          display: "inline-block",
+                        }}
+                      />
+                      {ex.name}
+                      {visible[ex.id] && <DeltaBadge value={d} />}
+                      {visible[ex.id] && showBwMultiple && (
+                        <BodyweightMultipleBadge value={bwMultiple} />
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+              <svg
+                ref={exerciseSvgRef}
+                width={CHART_W}
+                height={CHART_H + AXIS_H}
+                onMouseMove={handleExerciseMouseMove}
+                onMouseLeave={() => setExerciseHover(null)}
+              >
+                <g transform={`translate(${AXIS_W},0)`}>
+                  {oneRmDomain && (
+                    <YAxis
+                      min={min}
+                      max={max}
+                      step={Y_STEP}
+                      plotWidth={PLOT_W}
+                      plotHeight={CHART_H}
                     />
-                    {ex.name}
-                    {visible[ex.id] && <DeltaBadge value={d} />}
-                    {visible[ex.id] && showBwMultiple && (
-                      <BodyweightMultipleBadge value={bwMultiple} />
-                    )}
-                  </label>
-                );
-              })}
-            </div>
-            <svg
-              ref={exerciseSvgRef}
-              width={CHART_W}
-              height={CHART_H + AXIS_H}
-              onMouseMove={handleExerciseMouseMove}
-              onMouseLeave={() => setExerciseHover(null)}
-            >
-              <g transform={`translate(${AXIS_W},0)`}>
-                {oneRmDomain && (
-                  <YAxis
-                    min={min}
-                    max={max}
-                    step={Y_STEP}
-                    plotWidth={PLOT_W}
+                  )}
+                  {oneRmDomain &&
+                    activeSliced.map(({ ex, series }) => {
+                      const i = exerciseList.findIndex((e) => e.id === ex.id);
+                      return (
+                        <path
+                          key={ex.id}
+                          d={seriesToPath(
+                            series,
+                            oneRmDomain,
+                            PLOT_W,
+                            CHART_H,
+                            12,
+                            {
+                              min,
+                              max,
+                            },
+                          )}
+                          fill="none"
+                          stroke={PALETTE[i % PALETTE.length]}
+                          strokeWidth={LINE_WIDTH}
+                          opacity={LINE_OPACITY}
+                        />
+                      );
+                    })}
+                  {allValues.length === 0 && (
+                    <text
+                      x={PLOT_W / 2}
+                      y={CHART_H / 2}
+                      textAnchor="middle"
+                      fill="#999"
+                      fontSize={13}
+                    >
+                      {activeExercises.length === 0
+                        ? "Toggle an exercise above to see its trend"
+                        : "No logged data in this range yet"}
+                    </text>
+                  )}
+                  <WeekAxis
+                    domain={oneRmDomain}
+                    width={PLOT_W}
                     plotHeight={CHART_H}
                   />
-                )}
-                {oneRmDomain &&
-                  activeSliced.map(({ ex, series }) => {
-                    const i = exerciseList.findIndex((e) => e.id === ex.id);
-                    return (
-                      <path
-                        key={ex.id}
-                        d={seriesToPath(
-                          series,
-                          oneRmDomain,
-                          PLOT_W,
-                          CHART_H,
-                          12,
-                          {
-                            min,
-                            max,
-                          },
-                        )}
-                        fill="none"
-                        stroke={PALETTE[i % PALETTE.length]}
-                        strokeWidth={LINE_WIDTH}
-                        opacity={LINE_OPACITY}
-                      />
-                    );
-                  })}
-                {allValues.length === 0 && (
-                  <text
-                    x={PLOT_W / 2}
-                    y={CHART_H / 2}
-                    textAnchor="middle"
-                    fill="#999"
-                    fontSize={13}
-                  >
-                    {activeExercises.length === 0
-                      ? "Toggle an exercise above to see its trend"
-                      : "No logged data in this range yet"}
-                  </text>
-                )}
-                <WeekAxis
-                  domain={oneRmDomain}
-                  width={PLOT_W}
-                  plotHeight={CHART_H}
-                />
-                {exerciseHover && (
-                  <HoverTooltip {...exerciseHover} plotWidth={PLOT_W} />
-                )}
-              </g>
-            </svg>
-            <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
-              est. 1RM (kg), shared axis across toggled exercises
-            </div>
-          </>
-        )}
+                  {exerciseHover && (
+                    <HoverTooltip {...exerciseHover} plotWidth={PLOT_W} />
+                  )}
+                </g>
+              </svg>
+              <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
+                est. 1RM (kg), shared axis across toggled exercises
+              </div>
+            </>
+          )}
+        </div>
+        {/* #56: doesn't render at all without an active program — recentRpe
+            is only ever computed (page.tsx) when one exists, so an empty
+            array here is indistinguishable from "active program, nothing
+            logged yet" without this extra check, and the box would
+            otherwise show a pointless empty state alongside "no active
+            program" in the box beside it. */}
+        {hasActiveProgram && <RpeBox sessions={recentRpe} />}
       </div>
 
       {/* Bodyweight box — always its own, never merged into the overlay */}

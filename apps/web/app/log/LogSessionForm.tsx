@@ -66,6 +66,17 @@ function effectiveWeight(
     : entry.actualWeightKg;
 }
 
+// Same pre-filled-but-overridable pattern as effectiveWeight above, for
+// reps (#55). Only pre-fills when repTarget is a concrete number — left
+// blank for null (Rep Accumulation's whole-session-total target, no
+// per-set number to show; Failure Sets, handled separately with no reps
+// input at all) and for "AMRAP" (no sensible number to default "as many as
+// possible" to).
+function effectiveReps(entry: SetEntryState, set: PrescribedSet): number | "" {
+  if (entry.repsAchieved !== "") return entry.repsAchieved;
+  return typeof set.repTarget === "number" ? set.repTarget : "";
+}
+
 export default function LogSessionForm({
   programId,
   programName,
@@ -128,14 +139,11 @@ export default function LogSessionForm({
           const isFailureSet =
             set.prescribedWeightKg === null && set.repTarget === null;
           const weight = effectiveWeight(entry, set);
+          const reps = effectiveReps(entry, set);
           return {
             setNumber: set.setNumber,
             actualWeightKg: isFailureSet ? null : weight === "" ? null : weight,
-            repsAchieved: isFailureSet
-              ? null
-              : entry.repsAchieved === ""
-                ? null
-                : entry.repsAchieved,
+            repsAchieved: isFailureSet ? null : reps === "" ? null : reps,
             rpe: isFailureSet ? null : entry.rpe === "" ? null : entry.rpe,
             isDone: entry.isDone,
           };
@@ -258,7 +266,7 @@ export default function LogSessionForm({
                       />
                       <input
                         type="number"
-                        value={entry.repsAchieved}
+                        value={effectiveReps(entry, set)}
                         onChange={(e) =>
                           updateSet(
                             ex.exerciseInDayId,

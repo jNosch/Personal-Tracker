@@ -96,6 +96,52 @@ export function computeBodyweightMultiple(
   return Math.round((latest.value / bw) * 10) / 10;
 }
 
+export interface RpeReading {
+  sessionId: string;
+  date: string; // ISO date
+  rpe: number;
+}
+
+export interface SessionRpe {
+  sessionId: string;
+  date: string; // ISO date
+  avgRpe: number;
+}
+
+// Averages RPE across every set that logged one, grouped by session, and
+// returns the `limit` most recent sessions in chronological (oldest-first)
+// order (#56) — matches how the rest of this page reads time
+// left-to-right/top-to-bottom, so a climbing trend reads as climbing, not
+// descending. Grouped by sessionId, not date — two sessions can share a
+// calendar day (same lesson as #46's same-day chart collapse: never key
+// time-series grouping off date strings alone when a stable id exists).
+// Purely a display aggregate, not an autoregulation input (#56's resolved
+// scope) — no progression math reads this.
+export function recentSessionRpe(
+  readings: RpeReading[],
+  limit: number,
+): SessionRpe[] {
+  if (limit <= 0) return [];
+  const bySession = new Map<string, { date: string; values: number[] }>();
+  for (const r of readings) {
+    const existing = bySession.get(r.sessionId);
+    if (existing) existing.values.push(r.rpe);
+    else bySession.set(r.sessionId, { date: r.date, values: [r.rpe] });
+  }
+  return [...bySession.entries()]
+    .sort(([, a], [, b]) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .slice(0, limit)
+    .map(([sessionId, s]) => ({
+      sessionId,
+      date: s.date,
+      avgRpe:
+        Math.round(
+          (s.values.reduce((sum, v) => sum + v, 0) / s.values.length) * 10,
+        ) / 10,
+    }))
+    .reverse();
+}
+
 // Every Monday's ISO date within [startDate, endDate], inclusive of both
 // endpoints — the chart's "rough" weekly axis labels, deliberately not tied
 // to which days actually have a data point (that would misalign with an

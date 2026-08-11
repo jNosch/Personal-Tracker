@@ -5,6 +5,8 @@ import {
   filterByRange,
   mondayTicks,
   nearestBodyweight,
+  recentSessionRpe,
+  type RpeReading,
   type SeriesPoint,
 } from "./progressRange";
 
@@ -146,6 +148,71 @@ describe("computeBodyweightMultiple", () => {
         bw,
       ),
     ).toBe(2); // 200 / 100, ignores the earlier 300kg point entirely
+  });
+});
+
+describe("recentSessionRpe", () => {
+  const readings: RpeReading[] = [
+    { sessionId: "s1", date: "2026-06-01", rpe: 7 },
+    { sessionId: "s1", date: "2026-06-01", rpe: 9 },
+    { sessionId: "s2", date: "2026-06-08", rpe: 8 },
+    { sessionId: "s3", date: "2026-06-15", rpe: 6 },
+    { sessionId: "s3", date: "2026-06-15", rpe: 8 },
+    { sessionId: "s3", date: "2026-06-15", rpe: 7 },
+    { sessionId: "s4", date: "2026-06-22", rpe: 9.5 },
+  ];
+
+  it("returns an empty array with no readings", () => {
+    expect(recentSessionRpe([], 3)).toEqual([]);
+  });
+
+  it("returns an empty array for a non-positive limit", () => {
+    expect(recentSessionRpe(readings, 0)).toEqual([]);
+  });
+
+  it("averages every reading within a session, rounded to one decimal", () => {
+    // s1: (7 + 9) / 2 = 8. s3: (6 + 8 + 7) / 3 = 7.
+    const result = recentSessionRpe(readings, 4);
+    expect(result.find((r) => r.date === "2026-06-01")?.avgRpe).toBe(8);
+    expect(result.find((r) => r.date === "2026-06-15")?.avgRpe).toBe(7);
+  });
+
+  it("returns the `limit` most recent sessions, oldest first", () => {
+    // 4 sessions total, limit 3 -> drops s1 (oldest), keeps s2/s3/s4
+    // ascending by date.
+    expect(recentSessionRpe(readings, 3).map((r) => r.date)).toEqual([
+      "2026-06-08",
+      "2026-06-15",
+      "2026-06-22",
+    ]);
+  });
+
+  it("returns every session, still oldest-first, when there are fewer than the limit", () => {
+    expect(recentSessionRpe(readings, 10).map((r) => r.date)).toEqual([
+      "2026-06-01",
+      "2026-06-08",
+      "2026-06-15",
+      "2026-06-22",
+    ]);
+  });
+
+  it("groups by sessionId, not date — two sessions sharing a calendar day stay distinct", () => {
+    const sameDay: RpeReading[] = [
+      { sessionId: "a", date: "2026-06-01", rpe: 6 },
+      { sessionId: "b", date: "2026-06-01", rpe: 10 },
+    ];
+    const result = recentSessionRpe(sameDay, 5);
+    expect(result).toHaveLength(2);
+    expect(result.map((r) => r.avgRpe).sort((a, b) => a - b)).toEqual([6, 10]);
+    // sessionId survives onto the result — callers need a stable identity
+    // to key a list on, since two entries can share an identical date.
+    expect(new Set(result.map((r) => r.sessionId)).size).toBe(2);
+  });
+
+  it("carries the correct sessionId through onto each result", () => {
+    const result = recentSessionRpe(readings, 4);
+    expect(result.find((r) => r.date === "2026-06-08")?.sessionId).toBe("s2");
+    expect(result.find((r) => r.date === "2026-06-15")?.sessionId).toBe("s3");
   });
 });
 

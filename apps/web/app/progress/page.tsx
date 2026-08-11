@@ -1,15 +1,20 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
   bodyweightEntries,
   dayTemplates,
   exerciseInDay,
+  loggedSets,
   oneRmEstimates,
   programs,
   sessions,
 } from "../../db/schema";
 import ProgressCharts, { type ExerciseOption } from "./ProgressCharts";
-import type { SeriesPoint } from "../../lib/progressRange";
+import { recentSessionRpe, type SeriesPoint } from "../../lib/progressRange";
+
+// #56: how many of the active program's most recent RPE-logged sessions
+// the recent-RPE box shows.
+const RECENT_RPE_SESSION_COUNT = 3;
 
 // Same reasoning as app/programs/page.tsx — not statically prerenderable.
 export const dynamic = "force-dynamic";
@@ -99,6 +104,42 @@ export default async function ProgressPage() {
     value: Number(r.value),
   }));
 
+  // #56: recent-RPE box — display-only, tied to the active program
+  // specifically (same scoping principle as #31's original active-program
+  // default), not global history. Every set that logged an RPE, across
+  // every exercise/day of the active program; recentSessionRpe (lib/) does
+  // the per-session averaging and picks the most recent
+  // RECENT_RPE_SESSION_COUNT.
+  const recentRpe = activeProgram
+    ? recentSessionRpe(
+        (
+          await db
+            .select({
+              sessionId: sessions.id,
+              date: sessions.sessionDate,
+              rpe: loggedSets.rpe,
+            })
+            .from(loggedSets)
+            .innerJoin(sessions, eq(loggedSets.sessionId, sessions.id))
+            .innerJoin(
+              dayTemplates,
+              eq(sessions.dayTemplateId, dayTemplates.id),
+            )
+            .where(
+              and(
+                eq(dayTemplates.programId, activeProgram.id),
+                isNotNull(loggedSets.rpe),
+              ),
+            )
+        ).map((r) => ({
+          sessionId: r.sessionId,
+          date: r.date,
+          rpe: Number(r.rpe),
+        })),
+        RECENT_RPE_SESSION_COUNT,
+      )
+    : [];
+
   return (
     <ProgressCharts
       exercises={trackedExercises}
@@ -106,6 +147,7 @@ export default async function ProgressPage() {
       oneRmSeries={oneRmSeries}
       bodyweightSeries={bodyweightSeries}
       hasActiveProgram={activeProgram !== undefined}
+      recentRpe={recentRpe}
     />
   );
 }
