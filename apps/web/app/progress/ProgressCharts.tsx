@@ -294,7 +294,9 @@ function DeltaBadge({ value }: { value: number | null }) {
 // imply "good vs. bad." Reuses DeltaBadge's null -> "not enough data yet"
 // treatment for the in-range-but-no-point case; the caller is responsible
 // for not rendering this at all when there's zero bodyweight data anywhere
-// (a different, badge-disappears-entirely case per #43's resolved spec).
+// (a different, badge-disappears-entirely case per #43's resolved spec), or
+// when the exercise itself has zero 1RM data ever — otherwise this badge's
+// null state duplicates DeltaBadge's identical text right beside it.
 function BodyweightMultipleBadge({ value }: { value: number | null }) {
   if (value === null) {
     return (
@@ -482,8 +484,18 @@ export default function ProgressCharts({
                 // there's at least one bodyweight entry anywhere — zero
                 // bodyweight data hides the badge entirely rather than
                 // showing "not enough data yet" for every exercise row.
+                // Also hidden when the exercise itself has zero 1RM data
+                // ever recorded (not just out of the current range) —
+                // otherwise it duplicates DeltaBadge's identical "not
+                // enough data yet" text right next to it, which reads as a
+                // glitch rather than two distinct metrics. A narrow range
+                // with *some* data elsewhere still shows the badge with its
+                // own null state (spec's resolved behavior) — this check is
+                // against the exercise's whole series, not rangeSeries.
                 const showBwMultiple =
-                  !ex.isBodyweightBased && bodyweightSeries.length > 0;
+                  !ex.isBodyweightBased &&
+                  bodyweightSeries.length > 0 &&
+                  (oneRmSeries[ex.id]?.length ?? 0) > 0;
                 const bwMultiple = showBwMultiple
                   ? computeBodyweightMultiple(rangeSeries, bodyweightSeries)
                   : null;
