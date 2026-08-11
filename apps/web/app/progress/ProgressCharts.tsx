@@ -15,9 +15,9 @@ import {
   computeDelta,
   filterByRange,
   RANGES,
+  type ExerciseRpeTrend,
   type RangeKey,
   type SeriesPoint,
-  type SessionRpe,
 } from "../../lib/progressRange";
 import {
   combinedDomain,
@@ -308,12 +308,13 @@ interface ProgressChartsProps {
   // different empty-state copy (see the showAllExercises/hasActiveProgram
   // three-way branch below).
   hasActiveProgram: boolean;
-  // #56: most recent RPE-logged sessions of the active program, oldest
-  // first, already averaged per session — display-only, doesn't feed any
-  // progression/estimate math. Empty when the active program has none
-  // logged; caller (page.tsx) only computes this at all when there's an
-  // active program, so RpeBox itself doesn't render otherwise (see below).
-  recentRpe: SessionRpe[];
+  // #56: each active-program exercise's own most recent RPE-logged
+  // sessions, oldest first, already averaged per session — display-only,
+  // doesn't feed any progression/estimate math. Empty when the active
+  // program has none logged; caller (page.tsx) only computes this at all
+  // when there's an active program, so RpeBox itself doesn't render
+  // otherwise (see below).
+  recentRpe: ExerciseRpeTrend[];
 }
 
 function DeltaBadge({ value }: { value: number | null }) {
@@ -363,25 +364,27 @@ function BodyweightMultipleBadge({ value }: { value: number | null }) {
 // Small vertical sidebar next to the exercise overlay box (#56) —
 // deliberately separate from that box rather than merged into its header,
 // since it's scoped to the active program specifically, not to whichever
-// exercises are currently toggled. Broken out per exercise, not one
-// blended session average (#56 follow-up — a single number across every
-// exercise in the session hid which lift the effort actually came from).
-// Each exercise's name is colored to match its line in the overlay chart
-// above when it's one of the chart's own toggleable (tracks_1rm)
-// exercises, so a glance at "which color is climbing" up there matches
-// "which color is spiking" down here; accessories/isolation work (never in
-// that chart at all) get a neutral gray instead of an arbitrary color that
-// wouldn't mean anything. High RPE (>= HIGH_RPE_THRESHOLD, near-maximal
-// effort) gets a warning color on the *number*, independent of the name's
-// identity color — unlike DeltaBadge/BodyweightMultipleBadge's deliberate
-// neutrality, this box exists specifically to flag "you might need a
-// deload," so a plain "here's a number" treatment would undersell the one
-// thing it's for.
+// exercises are currently toggled. Grouped by exercise, each showing its
+// own last few RPE-logged sessions side by side (#56 follow-up — grouping
+// by session first hid an exercise's real trend whenever it's trained less
+// often than every session, e.g. SBD's Squat only comes up every 3rd
+// session; "last 3 sessions of the program" could show 0-1 Squat readings
+// instead of its actual last 3). Each exercise's name is colored to match
+// its line in the overlay chart above when it's one of the chart's own
+// toggleable (tracks_1rm) exercises, so a glance at "which color is
+// climbing" up there matches "which color is spiking" down here;
+// accessories/isolation work (never in that chart at all) get a neutral
+// gray instead of an arbitrary color that wouldn't mean anything. High RPE
+// (>= HIGH_RPE_THRESHOLD, near-maximal effort) gets a warning color on the
+// *number*, independent of the name's identity color — unlike
+// DeltaBadge/BodyweightMultipleBadge's deliberate neutrality, this box
+// exists specifically to flag "you might need a deload," so a plain
+// "here's a number" treatment would undersell the one thing it's for.
 function RpeBox({
-  sessions,
+  trends,
   exercises,
 }: {
-  sessions: SessionRpe[];
+  trends: ExerciseRpeTrend[];
   // Active-program-scoped list (the `exercises` prop, not `allExercises`)
   // — RpeBox is itself always active-program-scoped, so its colors should
   // match what the chart looks like with the "show all" toggle off, not
@@ -399,76 +402,62 @@ function RpeBox({
       }}
     >
       <h2 style={{ fontSize: 13, marginBottom: 10 }}>Recent RPE</h2>
-      {sessions.length === 0 ? (
+      {trends.length === 0 ? (
         <p style={{ color: "#999", fontSize: 12 }}>No RPE logged yet.</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {sessions.map((s) => (
-            <div key={s.sessionId}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {trends.map((t) => (
+            <div key={t.exerciseId}>
               <div
                 style={{
-                  color: "#999",
-                  fontSize: 11,
+                  color: colorForExercise(t.exerciseId, exercises),
+                  fontSize: 12,
                   whiteSpace: "nowrap",
-                  marginBottom: 3,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  marginBottom: 4,
                 }}
               >
-                {formatShortDate(s.date)}
+                {t.exerciseName}
               </div>
-              {s.exercises.map((ex) => (
-                <div
-                  key={ex.exerciseId}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    fontSize: 12,
-                  }}
-                >
-                  <span
-                    style={{
-                      // flex: "1 1 auto" + minWidth: 0 (not the default
-                      // min-width: auto flex items get) — without both, a
-                      // long name like "Barbell Back Squat" refuses to
-                      // shrink and pushes the RPE value out past the box
-                      // entirely, rendering nowhere visible (found
-                      // live-testing this exact change: the value just
-                      // vanished, not merely misaligned).
-                      flex: "1 1 auto",
-                      minWidth: 0,
-                      color: colorForExercise(ex.exerciseId, exercises),
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {ex.exerciseName}
-                  </span>
-                  <span
-                    style={{
-                      flexShrink: 0,
-                      fontWeight: 600,
-                      whiteSpace: "nowrap",
-                      // "#666" (matches BodyweightMultipleBadge's neutral
-                      // value color elsewhere in this file), not "#111" —
-                      // the page background here is actually near-black
-                      // (rgb(10,10,10), prefers-color-scheme dark; see
-                      // known-issues.md's "no design system yet, isn't
-                      // theme-aware" entry), so bare "#111" text with no
-                      // background of its own is nearly invisible.
-                      // Confirmed via getComputedStyle + a real render, not
-                      // just guessed — every other "#111" in this file
-                      // pairs it with an explicit opaque background of its
-                      // own (HoverTooltip's fill, the active range-tab
-                      // button), which this bare text color didn't have.
-                      color:
-                        ex.avgRpe >= HIGH_RPE_THRESHOLD ? "#dc2626" : "#666",
-                    }}
-                  >
-                    {ex.avgRpe.toFixed(1)}
-                  </span>
-                </div>
-              ))}
+              <div style={{ display: "flex", gap: 10 }}>
+                {t.readings.map((r) => (
+                  <div key={r.sessionId} style={{ textAlign: "center" }}>
+                    <div
+                      style={{
+                        fontSize: 9,
+                        color: "#999",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {formatShortDate(r.date)}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        // "#666" (matches BodyweightMultipleBadge's neutral
+                        // value color elsewhere in this file), not "#111"
+                        // — the page background here is actually
+                        // near-black (rgb(10,10,10), prefers-color-scheme
+                        // dark; see known-issues.md's "no design system
+                        // yet, isn't theme-aware" entry), so bare "#111"
+                        // text with no background of its own is nearly
+                        // invisible. Confirmed via getComputedStyle + a
+                        // real render, not just guessed — every other
+                        // "#111" in this file pairs it with an explicit
+                        // opaque background of its own (HoverTooltip's
+                        // fill, the active range-tab button), which this
+                        // bare text color didn't have.
+                        color:
+                          r.avgRpe >= HIGH_RPE_THRESHOLD ? "#dc2626" : "#666",
+                      }}
+                    >
+                      {r.avgRpe.toFixed(1)}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
@@ -832,7 +821,7 @@ export default function ProgressCharts({
             otherwise show a pointless empty state alongside "no active
             program" in the box beside it. */}
         {hasActiveProgram && (
-          <RpeBox sessions={recentRpe} exercises={exercises} />
+          <RpeBox trends={recentRpe} exercises={exercises} />
         )}
       </div>
 

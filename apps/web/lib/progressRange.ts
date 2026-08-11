@@ -104,75 +104,98 @@ export interface RpeReading {
   rpe: number;
 }
 
-export interface ExerciseRpe {
-  exerciseId: string;
-  exerciseName: string;
+export interface RpeTrendPoint {
+  sessionId: string;
+  date: string; // ISO date
   avgRpe: number;
 }
 
-export interface SessionRpe {
-  sessionId: string;
-  date: string; // ISO date
-  // Per exercise, not one blended session average (#56 follow-up — a single
-  // number across every exercise in the session hid which lift the effort
-  // actually came from). Alphabetical by name for a stable, predictable
-  // order rather than DB/insertion order.
-  exercises: ExerciseRpe[];
+export interface ExerciseRpeTrend {
+  exerciseId: string;
+  exerciseName: string;
+  // That exercise's own last `limit` RPE-logged sessions, oldest first
+  // (#56 follow-up: grouped by exercise, not by session — an exercise
+  // trained only every Nth session in the rotation, e.g. SBD's Squat, would
+  // otherwise show 0-1 readings inside a fixed "last 3 sessions of the
+  // program" window instead of its own real recent trend). Matches how the
+  // rest of this page reads time left-to-right/top-to-bottom, so a
+  // climbing trend reads as climbing, not descending.
+  readings: RpeTrendPoint[];
 }
 
-// Averages RPE per exercise within each session, and returns the `limit`
-// most recent sessions in chronological (oldest-first) order (#56) —
-// matches how the rest of this page reads time left-to-right/
-// top-to-bottom, so a climbing trend reads as climbing, not descending.
-// Grouped by sessionId, not date — two sessions can share a calendar day
-// (same lesson as #46's same-day chart collapse: never key time-series
-// grouping off date strings alone when a stable id exists). Purely a
-// display aggregate, not an autoregulation input (#56's resolved scope) —
-// no progression math reads this.
-export function recentSessionRpe(
+// Averages RPE per (exercise, session) — an exercise can log RPE on more
+// than one set in the same session — then, per exercise, returns its own
+// most recent `limit` sessions in chronological order. Grouped by
+// sessionId, not date — two sessions can share a calendar day (same lesson
+// as #46's same-day chart collapse: never key time-series grouping off
+// date strings alone when a stable id exists). Purely a display aggregate,
+// not an autoregulation input (#56's resolved scope) — no progression math
+// reads this.
+export function recentExerciseRpeTrends(
   readings: RpeReading[],
   limit: number,
-): SessionRpe[] {
+): ExerciseRpeTrend[] {
   if (limit <= 0) return [];
-  const bySession = new Map<
+  // (exerciseId, sessionId) -> that session's readings for that exercise —
+  // resolved to one averaged point per (exercise, session) before grouping
+  // by exercise, so multiple sets logging RPE the same session collapse
+  // into a single trend point rather than each counting toward `limit`
+  // separately.
+  const bySessionExercise = new Map<
     string,
     {
+      exerciseId: string;
+      exerciseName: string;
+      sessionId: string;
       date: string;
-      byExercise: Map<string, { name: string; values: number[] }>;
+      values: number[];
     }
   >();
   for (const r of readings) {
-    let session = bySession.get(r.sessionId);
-    if (!session) {
-      session = { date: r.date, byExercise: new Map() };
-      bySession.set(r.sessionId, session);
-    }
-    const existing = session.byExercise.get(r.exerciseId);
+    const key = `${r.exerciseId}:${r.sessionId}`;
+    const existing = bySessionExercise.get(key);
     if (existing) existing.values.push(r.rpe);
     else
-      session.byExercise.set(r.exerciseId, {
-        name: r.exerciseName,
+      bySessionExercise.set(key, {
+        exerciseId: r.exerciseId,
+        exerciseName: r.exerciseName,
+        sessionId: r.sessionId,
+        date: r.date,
         values: [r.rpe],
       });
   }
-  return [...bySession.entries()]
-    .sort(([, a], [, b]) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
-    .slice(0, limit)
-    .map(([sessionId, s]) => ({
-      sessionId,
+  const byExercise = new Map<
+    string,
+    { exerciseName: string; points: RpeTrendPoint[] }
+  >();
+  for (const s of bySessionExercise.values()) {
+    const avgRpe =
+      Math.round(
+        (s.values.reduce((sum, v) => sum + v, 0) / s.values.length) * 10,
+      ) / 10;
+    const point: RpeTrendPoint = {
+      sessionId: s.sessionId,
       date: s.date,
-      exercises: [...s.byExercise.entries()]
-        .map(([exerciseId, e]) => ({
-          exerciseId,
-          exerciseName: e.name,
-          avgRpe:
-            Math.round(
-              (e.values.reduce((sum, v) => sum + v, 0) / e.values.length) * 10,
-            ) / 10,
-        }))
-        .sort((a, b) => a.exerciseName.localeCompare(b.exerciseName)),
+      avgRpe,
+    };
+    const existing = byExercise.get(s.exerciseId);
+    if (existing) existing.points.push(point);
+    else
+      byExercise.set(s.exerciseId, {
+        exerciseName: s.exerciseName,
+        points: [point],
+      });
+  }
+  return [...byExercise.entries()]
+    .map(([exerciseId, e]) => ({
+      exerciseId,
+      exerciseName: e.exerciseName,
+      readings: e.points
+        .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+        .slice(0, limit)
+        .reverse(),
     }))
-    .reverse();
+    .sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
 }
 
 // Every Monday's ISO date within [startDate, endDate], inclusive of both

@@ -11,11 +11,16 @@ import {
   sessions,
 } from "../../db/schema";
 import ProgressCharts, { type ExerciseOption } from "./ProgressCharts";
-import { recentSessionRpe, type SeriesPoint } from "../../lib/progressRange";
+import {
+  recentExerciseRpeTrends,
+  type SeriesPoint,
+} from "../../lib/progressRange";
 
-// #56: how many of the active program's most recent RPE-logged sessions
-// the recent-RPE box shows.
-const RECENT_RPE_SESSION_COUNT = 3;
+// #56: how many of its own most recent RPE-logged sessions the recent-RPE
+// box shows per exercise (not "last N sessions of the program" — see
+// recentExerciseRpeTrends' own comment for why that's a different, wrong
+// question for an exercise trained only every Nth session in rotation).
+const RECENT_RPE_READINGS_PER_EXERCISE = 3;
 
 // Same reasoning as app/programs/page.tsx — not statically prerenderable.
 export const dynamic = "force-dynamic";
@@ -109,11 +114,12 @@ export default async function ProgressPage() {
   // specifically (same scoping principle as #31's original active-program
   // default), not global history. Every set that logged an RPE, across
   // every exercise/day of the active program, joined to exercises for the
-  // name (#56 follow-up: broken out per exercise, not one blended session
-  // average); recentSessionRpe (lib/) does the per-session/per-exercise
-  // averaging and picks the most recent RECENT_RPE_SESSION_COUNT sessions.
+  // name; recentExerciseRpeTrends (lib/) does the per-session averaging and
+  // picks each exercise's own most recent RECENT_RPE_READINGS_PER_EXERCISE
+  // readings (#56 follow-up: grouped by exercise, not by session — see
+  // that function's own comment).
   const recentRpe = activeProgram
-    ? recentSessionRpe(
+    ? recentExerciseRpeTrends(
         (
           await db
             .select({
@@ -143,7 +149,7 @@ export default async function ProgressPage() {
           exerciseName: r.exerciseName,
           rpe: Number(r.rpe),
         })),
-        RECENT_RPE_SESSION_COUNT,
+        RECENT_RPE_READINGS_PER_EXERCISE,
       )
     : [];
 
