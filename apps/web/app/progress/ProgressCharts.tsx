@@ -257,12 +257,18 @@ export interface ExerciseOption {
 }
 
 interface ProgressChartsProps {
+  // Active-program-scoped candidates (#31's original declutter default).
   exercises: ExerciseOption[];
+  // #53: every tracks_1rm exercise ever assigned to any program, active or
+  // archived — the "show all exercises" toggle's candidate list. Always a
+  // superset of `exercises`.
+  allExercises: ExerciseOption[];
   oneRmSeries: Record<string, SeriesPoint[]>;
   bodyweightSeries: SeriesPoint[];
   // Distinguishes "no active program" from "active program, nothing tracked"
-  // — exercises.length === 0 alone can't tell those apart, and they need
-  // different empty-state copy.
+  // — an empty candidate list alone can't tell those apart, and they need
+  // different empty-state copy (see the showAllExercises/hasActiveProgram
+  // three-way branch below).
   hasActiveProgram: boolean;
 }
 
@@ -312,6 +318,7 @@ function BodyweightMultipleBadge({ value }: { value: number | null }) {
 
 export default function ProgressCharts({
   exercises,
+  allExercises,
   oneRmSeries,
   bodyweightSeries,
   hasActiveProgram,
@@ -319,16 +326,24 @@ export default function ProgressCharts({
   // Default: everything toggled on. With a handful of tracked exercises
   // (the expected case for a single-user tracker) an overlay of all of them
   // is still readable, and it means the chart isn't blank on first visit.
+  // Seeded from allExercises (the superset, #53) rather than just the
+  // active-program list, so an exercise the "show all" toggle later reveals
+  // already has a default rather than silently starting unchecked.
   const [visible, setVisible] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(exercises.map((ex) => [ex.id, true])),
+    Object.fromEntries(allExercises.map((ex) => [ex.id, true])),
   );
+  // #53: switches the candidate list between the active-program default
+  // and every tracks_1rm exercise ever assigned to any program — opt-in,
+  // #31's original declutter default stays untouched when this is off.
+  const [showAllExercises, setShowAllExercises] = useState(false);
+  const exerciseList = showAllExercises ? allExercises : exercises;
   const [range, setRange] = useState<RangeKey>("all");
   const [exerciseHover, setExerciseHover] = useState<HoverState | null>(null);
   const [bwHover, setBwHover] = useState<HoverState | null>(null);
   const exerciseSvgRef = useRef<SVGSVGElement>(null);
   const bwSvgRef = useRef<SVGSVGElement>(null);
 
-  const activeExercises = exercises.filter((ex) => visible[ex.id]);
+  const activeExercises = exerciseList.filter((ex) => visible[ex.id]);
   const activeSliced = activeExercises.map((ex) => ({
     ex,
     series: filterByRange(oneRmSeries[ex.id] ?? [], range),
@@ -370,7 +385,7 @@ export default function ProgressCharts({
       return;
     }
     const ex = activeExercises[nearest.seriesIndex]!;
-    const colorIndex = exercises.findIndex((e2) => e2.id === ex.id);
+    const colorIndex = exerciseList.findIndex((e2) => e2.id === ex.id);
     setExerciseHover({
       x: nearest.x,
       y: nearest.y,
@@ -458,11 +473,34 @@ export default function ProgressCharts({
           marginBottom: 16,
         }}
       >
-        {exercises.length === 0 ? (
+        {/* #53: opt-in escape hatch from #31's active-program-only default
+            — outside the empty-state branch below so it's reachable even
+            when the active program has nothing tracked. */}
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            color: "#666",
+            marginBottom: 10,
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={showAllExercises}
+            onChange={() => setShowAllExercises((v) => !v)}
+          />
+          Show all exercises (including archived programs)
+        </label>
+        {exerciseList.length === 0 ? (
           <p style={{ color: "#999", fontSize: 13 }}>
-            {hasActiveProgram
-              ? "No exercises in the active program are tracked for 1RM yet."
-              : "No active program. Activate one to see its exercises here."}
+            {showAllExercises
+              ? "No 1RM-tracked exercises found across any program yet."
+              : hasActiveProgram
+                ? "No exercises in the active program are tracked for 1RM yet."
+                : "No active program. Activate one to see its exercises here."}
           </p>
         ) : (
           <>
@@ -474,7 +512,7 @@ export default function ProgressCharts({
                 flexWrap: "wrap",
               }}
             >
-              {exercises.map((ex, i) => {
+              {exerciseList.map((ex, i) => {
                 const rangeSeries = filterByRange(
                   oneRmSeries[ex.id] ?? [],
                   range,
@@ -555,7 +593,7 @@ export default function ProgressCharts({
                 )}
                 {oneRmDomain &&
                   activeSliced.map(({ ex, series }) => {
-                    const i = exercises.findIndex((e) => e.id === ex.id);
+                    const i = exerciseList.findIndex((e) => e.id === ex.id);
                     return (
                       <path
                         key={ex.id}
