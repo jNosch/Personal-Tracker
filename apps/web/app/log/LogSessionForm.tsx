@@ -9,6 +9,11 @@
 // when schemeState has none yet (#16).
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import {
+  effectiveReps,
+  effectiveWeight,
+  loggedTotalReps,
+} from "../../lib/logEntry";
 import type { PrescribedSet } from "../../lib/schemes";
 import { logSession, setTrainingMax } from "./actions";
 
@@ -58,41 +63,10 @@ function initialEntryState(exercises: ExerciseView[]): EntryState {
   return state;
 }
 
-// The displayed/submitted weight: whatever the user typed, or the current
-// prescription if they haven't touched the field yet (issue #14's
-// "pre-filled from the prescription, overridable").
-function effectiveWeight(
-  entry: SetEntryState,
-  set: PrescribedSet,
-): number | "" {
-  return entry.actualWeightKg === ""
-    ? (set.prescribedWeightKg ?? "")
-    : entry.actualWeightKg;
-}
-
-// Same pre-filled-but-overridable pattern as effectiveWeight above, for
-// reps (#55). Only pre-fills when repTarget is a concrete number — left
-// blank for null (Rep Accumulation's whole-session-total target, no
-// per-set number to show; Failure Sets, handled separately with no reps
-// input at all) and for "AMRAP" (no sensible number to default "as many as
-// possible" to).
-function effectiveReps(entry: SetEntryState, set: PrescribedSet): number | "" {
-  if (entry.repsAchieved !== "") return entry.repsAchieved;
-  return typeof set.repTarget === "number" ? set.repTarget : "";
-}
-
-// Live running total for Rep Accumulation's whole-session target (#57) —
-// sums whatever's actually been typed into each set's reps field so far.
-// Deliberately reads entry.repsAchieved directly, not effectiveReps: Rep
-// Accumulation's repTarget is always null (schemes.ts), so effectiveReps
-// never pre-fills it anyway, but reading the raw entry keeps this
-// unambiguous ("what the user actually entered") regardless of that.
-function loggedTotalReps(ex: ExerciseView, entries: EntryState): number {
-  return ex.sets.reduce((sum, set) => {
-    const reps = entries[ex.exerciseInDayId]?.[set.setNumber]?.repsAchieved;
-    return sum + (typeof reps === "number" ? reps : 0);
-  }, 0);
-}
+// effectiveWeight/effectiveReps/loggedTotalReps now live in lib/logEntry.ts
+// (moved in code review — pure pre-fill/aggregation logic belongs there per
+// code-conventions.md's file-organization rule, and it gets the
+// testing.md-mandatory unit tests that way).
 
 export default function LogSessionForm({
   programId,
@@ -235,7 +209,7 @@ export default function LogSessionForm({
               {ex.repAccumulationTargetTotalReps !== undefined && (
                 <span style={{ fontWeight: 400, fontSize: 15, color: "#666" }}>
                   target {ex.repAccumulationTargetTotalReps} reps · logged{" "}
-                  {loggedTotalReps(ex, entries)}
+                  {loggedTotalReps(ex.sets, entries[ex.exerciseInDayId] ?? {})}
                 </span>
               )}
             </div>

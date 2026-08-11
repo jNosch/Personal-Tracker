@@ -212,6 +212,17 @@ const PALETTE = [
   "#0891b2",
 ];
 
+// Shared by every place that needs "this exercise's chart color" — checkbox
+// dot, path stroke, hover tooltip, RpeBox's exercise names (deduped in code
+// review; each site previously did its own findIndex+modulo). -1 (not
+// found in the given list — e.g. RpeBox's accessory exercises, never in
+// the tracks_1rm-only chart at all) falls back to a neutral gray rather
+// than wrapping a negative index through modulo.
+function colorForExercise(exerciseId: string, list: { id: string }[]): string {
+  const i = list.findIndex((e) => e.id === exerciseId);
+  return i === -1 ? "#999" : PALETTE[i % PALETTE.length]!;
+}
+
 // Total <svg> width. The box wrapping it has border(1) + padding(16) on
 // each side (border-box), sitting inside a maxWidth:760/padding:24
 // container — 760 - 24*2 - (1+16)*2 = 678px is genuinely available inside
@@ -222,6 +233,12 @@ const PALETTE = [
 const CHART_W = 660;
 const CHART_H = 300;
 const BW_H = 120;
+// border(1) + padding(16) on each side (border-box) — the gap between an
+// <svg width={CHART_W}> and the box that visually wraps it. Named (not an
+// inline "+ 34") so it reads the same way CHART_W's own comment already
+// spells the math out, rather than a bare literal at the one call site
+// that needs it (the exercise-overlay box's explicit width, #56).
+const BOX_CHROME = (1 + 16) * 2;
 // Bodyweight box's own width (#58) — deliberately separate from CHART_W,
 // not shared. The exercise-overlay box got an explicit fixed width (#56,
 // see below) so RpeBox has somewhere stable to sit beside it, but the
@@ -371,11 +388,6 @@ function RpeBox({
   // shift depending on that toggle's current state.
   exercises: ExerciseOption[];
 }) {
-  function nameColor(exerciseId: string): string {
-    const i = exercises.findIndex((e) => e.id === exerciseId);
-    return i === -1 ? "#999" : PALETTE[i % PALETTE.length]!;
-  }
-
   return (
     <div
       style={{
@@ -424,7 +436,7 @@ function RpeBox({
                       // vanished, not merely misaligned).
                       flex: "1 1 auto",
                       minWidth: 0,
-                      color: nameColor(ex.exerciseId),
+                      color: colorForExercise(ex.exerciseId, exercises),
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -535,11 +547,10 @@ export default function ProgressCharts({
       return;
     }
     const ex = activeExercises[nearest.seriesIndex]!;
-    const colorIndex = exerciseList.findIndex((e2) => e2.id === ex.id);
     setExerciseHover({
       x: nearest.x,
       y: nearest.y,
-      color: PALETTE[colorIndex % PALETTE.length]!,
+      color: colorForExercise(ex.id, exerciseList),
       label: `${formatShortDate(nearest.point.date)} — ${ex.name}: ${nearest.point.value} kg`,
     });
   }
@@ -638,10 +649,8 @@ export default function ProgressCharts({
             // exceed CHART_W once several exercises/badges are toggled on)
             // rather than staying pinned to the SVG's actual width,
             // squeezing RpeBox narrower than intended and wrapping its
-            // date text (found live-testing #56). CHART_W + padding(32) +
-            // border(2), the same box-model math CHART_W's own comment
-            // already does for the container.
-            width: CHART_W + 34,
+            // date text (found live-testing #56).
+            width: CHART_W + BOX_CHROME,
             flex: "0 0 auto",
             border: "1px solid #e5e5e5",
             borderRadius: 8,
@@ -687,7 +696,7 @@ export default function ProgressCharts({
                   flexWrap: "wrap",
                 }}
               >
-                {exerciseList.map((ex, i) => {
+                {exerciseList.map((ex) => {
                   const rangeSeries = filterByRange(
                     oneRmSeries[ex.id] ?? [],
                     range,
@@ -712,7 +721,7 @@ export default function ProgressCharts({
                   const bwMultiple = showBwMultiple
                     ? computeBodyweightMultiple(rangeSeries, bodyweightSeries)
                     : null;
-                  const color = PALETTE[i % PALETTE.length]!;
+                  const color = colorForExercise(ex.id, exerciseList);
                   return (
                     <label
                       key={ex.id}
@@ -767,29 +776,26 @@ export default function ProgressCharts({
                     />
                   )}
                   {oneRmDomain &&
-                    activeSliced.map(({ ex, series }) => {
-                      const i = exerciseList.findIndex((e) => e.id === ex.id);
-                      return (
-                        <path
-                          key={ex.id}
-                          d={seriesToPath(
-                            series,
-                            oneRmDomain,
-                            PLOT_W,
-                            CHART_H,
-                            12,
-                            {
-                              min,
-                              max,
-                            },
-                          )}
-                          fill="none"
-                          stroke={PALETTE[i % PALETTE.length]}
-                          strokeWidth={LINE_WIDTH}
-                          opacity={LINE_OPACITY}
-                        />
-                      );
-                    })}
+                    activeSliced.map(({ ex, series }) => (
+                      <path
+                        key={ex.id}
+                        d={seriesToPath(
+                          series,
+                          oneRmDomain,
+                          PLOT_W,
+                          CHART_H,
+                          12,
+                          {
+                            min,
+                            max,
+                          },
+                        )}
+                        fill="none"
+                        stroke={colorForExercise(ex.id, exerciseList)}
+                        strokeWidth={LINE_WIDTH}
+                        opacity={LINE_OPACITY}
+                      />
+                    ))}
                   {allValues.length === 0 && (
                     <text
                       x={PLOT_W / 2}
