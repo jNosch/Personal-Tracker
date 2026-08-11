@@ -107,19 +107,33 @@ export interface AxisTick {
   x: number;
 }
 
+// Thins a Monday list down to at most `maxTicks` evenly-strided entries —
+// a long range (many months) would otherwise crowd more date labels into
+// the chart's fixed width than can render without overlapping (#52).
+// Deterministic stride (every Nth Monday), not distance/pixel-measurement
+// based, so the chosen ticks stay predictable and don't jitter as the
+// domain grows week over week — the same "deliberately simple, fixed-step,
+// not derived" philosophy already used for gridlineValues' Y_STEP (#44).
+function thinTicks(dates: string[], maxTicks: number): string[] {
+  if (maxTicks <= 0 || dates.length <= maxTicks) return dates;
+  const stride = Math.ceil(dates.length / maxTicks);
+  return dates.filter((_, i) => i % stride === 0);
+}
+
 // Which dates WeekAxis labels, and where. A tick per Monday in the domain
-// (see mondayTicks) when there is one; a short range with no Monday in it
-// falls back to labeling start/end instead — otherwise a chart whose data
-// all falls within one non-Monday week would show no axis at all (the real
-// bug this guards: single-day dev test data, a Friday). A single-day
-// domain has only one date to show, centered rather than pinned to
-// dateToX's zero-span left-edge fallback.
+// (see mondayTicks) when there is one, thinned to at most `maxTicks` (#52)
+// — a short range with no Monday in it falls back to labeling start/end
+// instead — otherwise a chart whose data all falls within one non-Monday
+// week would show no axis at all (the real bug this guards: single-day dev
+// test data, a Friday). A single-day domain has only one date to show,
+// centered rather than pinned to dateToX's zero-span left-edge fallback.
 export function weekAxisTicks(
   domain: DateDomain,
   width: number,
   padding = 4,
+  maxTicks = 8,
 ): AxisTick[] {
-  const mondays = mondayTicks(domain.start, domain.end);
+  const mondays = thinTicks(mondayTicks(domain.start, domain.end), maxTicks);
   if (mondays.length > 0) {
     return mondays.map((date) => ({
       date,

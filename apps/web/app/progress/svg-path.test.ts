@@ -107,6 +107,30 @@ describe("weekAxisTicks", () => {
       "2026-08-06",
     ]);
   });
+
+  it("thins a long range down to at most 8 ticks rather than one per Monday (#52 — a 16-week range would otherwise crowd 16+ labels)", () => {
+    const longRange: DateDomain = { start: "2026-01-01", end: "2026-08-31" };
+    const ticks = weekAxisTicks(longRange, 660, 10);
+    expect(ticks.length).toBeLessThanOrEqual(8);
+    expect(ticks.length).toBeGreaterThan(0);
+  });
+
+  it("still shows every Monday when the count is already within the cap", () => {
+    // Same as the first test — 5 Mondays, well under the default max of 8.
+    expect(weekAxisTicks(domain, 100, 10).length).toBe(5);
+  });
+
+  it("respects a custom maxTicks", () => {
+    const longRange: DateDomain = { start: "2026-01-01", end: "2026-08-31" };
+    const ticks = weekAxisTicks(longRange, 660, 10, 4);
+    expect(ticks.length).toBeLessThanOrEqual(4);
+  });
+
+  it("always includes the earliest Monday as the first tick, so thinning never drops the domain's leading edge", () => {
+    const longRange: DateDomain = { start: "2026-01-01", end: "2026-08-31" };
+    const ticks = weekAxisTicks(longRange, 660, 10);
+    expect(ticks[0]!.date).toBe("2026-01-05"); // first Monday in January 2026
+  });
 });
 
 describe("valueToY", () => {
