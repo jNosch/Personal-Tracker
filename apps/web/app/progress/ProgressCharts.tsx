@@ -15,6 +15,7 @@ import {
   computeDelta,
   filterByRange,
   RANGES,
+  type ExerciseRpeTrend,
   type RangeKey,
   type SeriesPoint,
 } from "../../lib/progressRange";
@@ -211,6 +212,17 @@ const PALETTE = [
   "#0891b2",
 ];
 
+// Shared by every place that needs "this exercise's chart color" — checkbox
+// dot, path stroke, hover tooltip, RpeBox's exercise names (deduped in code
+// review; each site previously did its own findIndex+modulo). -1 (not
+// found in the given list — e.g. RpeBox's accessory exercises, never in
+// the tracks_1rm-only chart at all) falls back to a neutral gray rather
+// than wrapping a negative index through modulo.
+function colorForExercise(exerciseId: string, list: { id: string }[]): string {
+  const i = list.findIndex((e) => e.id === exerciseId);
+  return i === -1 ? "#999" : PALETTE[i % PALETTE.length]!;
+}
+
 // Total <svg> width. The box wrapping it has border(1) + padding(16) on
 // each side (border-box), sitting inside a maxWidth:760/padding:24
 // container — 760 - 24*2 - (1+16)*2 = 678px is genuinely available inside
@@ -221,16 +233,37 @@ const PALETTE = [
 const CHART_W = 660;
 const CHART_H = 300;
 const BW_H = 120;
+// border(1) + padding(16) on each side (border-box) — the gap between an
+// <svg width={CHART_W}> and the box that visually wraps it. Named (not an
+// inline "+ 34") so it reads the same way CHART_W's own comment already
+// spells the math out, rather than a bare literal at the one call site
+// that needs it (the exercise-overlay box's explicit width, #56).
+const BOX_CHROME = (1 + 16) * 2;
+// Bodyweight box's own width (#58) — deliberately separate from CHART_W,
+// not shared. The exercise-overlay box got an explicit fixed width (#56,
+// see below) so RpeBox has somewhere stable to sit beside it, but the
+// bodyweight box is still a plain full-width block with no sidebar — it
+// stretches to fill the (now-920, was-760) container automatically, and if
+// its SVG stayed pinned to CHART_W the extra room would just show up as a
+// visibly empty gap on the right (found live-testing #56's container
+// widen). Same box-model math as CHART_W's own comment, just against the
+// new 920 container: 920 - 24*2(container padding) - (1+16)*2(box
+// border+padding) = 838px available; 830 leaves the same small margin
+// CHART_W's 660-vs-678 choice did.
+const BW_CHART_W = 830;
 // Extra strip below the plotted line, reserved for WeekAxis's ticks and
 // date labels. Kept constant regardless of whether there's data to show an
 // axis for, so toggling checkboxes never shifts the chart's overall height.
 const AXIS_H = 24;
 // Left margin reserved for YAxis's value labels — same reasoning as AXIS_H,
-// but subtracted from CHART_W rather than added to it (see above).
+// but subtracted from CHART_W rather than added to it (see above). Shared
+// by both boxes — only the chart width itself (CHART_W vs BW_CHART_W)
+// differs between them.
 const AXIS_W = 40;
 // Actual plotting width once AXIS_W's margin is carved out — every line,
 // gridline, tick, and hover lookup operates in this width, not CHART_W.
 const PLOT_W = CHART_W - AXIS_W;
+const BW_PLOT_W = BW_CHART_W - AXIS_W;
 // Fixed Y-axis gridline step (#44) — same 10kg step for both boxes. The
 // original 5kg/1kg split (per box's own typical range) produced far too
 // many overlapping gridlines once the visible range actually got wide —
@@ -244,6 +277,18 @@ const LINE_OPACITY = 0.7;
 // Distinct color, not a gray — a muted gray line was hard to distinguish
 // against the near-white gridlines/background depending on viewer theme.
 const BODYWEIGHT_COLOR = "#db2777";
+// A session average at or above this reads as near-maximal effort — the
+// "you might need a deload" signal RpeBox exists to surface (#56). Not a
+// resolved spec number, an implementation judgement call — easy to retune
+// since it's named, not scattered as a bare literal.
+const HIGH_RPE_THRESHOLD = 9;
+// Shared "just a value, not a judgment" text color — BodyweightMultipleBadge
+// and RpeBox's non-high readings both want this same muted tone rather than
+// each hardcoding "#666" independently.
+const NEUTRAL_VALUE_COLOR = "#666";
+// RpeBox's own width cap — narrow enough to read as a sidebar next to the
+// exercise-overlay box, not so narrow that 3 date+value columns crowd.
+const RPE_BOX_MAX_W = 220;
 
 export interface ExerciseOption {
   id: string;
@@ -270,6 +315,13 @@ interface ProgressChartsProps {
   // different empty-state copy (see the showAllExercises/hasActiveProgram
   // three-way branch below).
   hasActiveProgram: boolean;
+  // #56: each active-program exercise's own most recent RPE-logged
+  // sessions, oldest first, already averaged per session — display-only,
+  // doesn't feed any progression/estimate math. Empty when the active
+  // program has none logged; caller (page.tsx) only computes this at all
+  // when there's an active program, so RpeBox itself doesn't render
+  // otherwise (see below).
+  recentRpe: ExerciseRpeTrend[];
 }
 
 function DeltaBadge({ value }: { value: number | null }) {
@@ -310,9 +362,115 @@ function BodyweightMultipleBadge({ value }: { value: number | null }) {
     );
   }
   return (
-    <span style={{ fontSize: 12, color: "#666", fontWeight: 600 }}>
+    <span style={{ fontSize: 12, color: NEUTRAL_VALUE_COLOR, fontWeight: 600 }}>
       {value.toFixed(1)}x BW
     </span>
+  );
+}
+
+// Small vertical sidebar next to the exercise overlay box (#56) —
+// deliberately separate from that box rather than merged into its header,
+// since it's scoped to the active program specifically, not to whichever
+// exercises are currently toggled. Grouped by exercise, each showing its
+// own last few RPE-logged sessions side by side (#56 follow-up — grouping
+// by session first hid an exercise's real trend whenever it's trained less
+// often than every session, e.g. SBD's Squat only comes up every 3rd
+// session; "last 3 sessions of the program" could show 0-1 Squat readings
+// instead of its actual last 3). Each exercise's name is colored to match
+// its line in the overlay chart above when it's one of the chart's own
+// toggleable (tracks_1rm) exercises, so a glance at "which color is
+// climbing" up there matches "which color is spiking" down here;
+// accessories/isolation work (never in that chart at all) get a neutral
+// gray instead of an arbitrary color that wouldn't mean anything. High RPE
+// (>= HIGH_RPE_THRESHOLD, near-maximal effort) gets a warning color on the
+// *number*, independent of the name's identity color — unlike
+// DeltaBadge/BodyweightMultipleBadge's deliberate neutrality, this box
+// exists specifically to flag "you might need a deload," so a plain
+// "here's a number" treatment would undersell the one thing it's for.
+function RpeBox({
+  trends,
+  exercises,
+}: {
+  trends: ExerciseRpeTrend[];
+  // Active-program-scoped list (the `exercises` prop, not `allExercises`)
+  // — RpeBox is itself always active-program-scoped, so its colors should
+  // match what the chart looks like with the "show all" toggle off, not
+  // shift depending on that toggle's current state.
+  exercises: ExerciseOption[];
+}) {
+  return (
+    <div
+      style={{
+        flex: "1 1 auto",
+        maxWidth: RPE_BOX_MAX_W,
+        border: "1px solid #e5e5e5",
+        borderRadius: 8,
+        padding: 16,
+      }}
+    >
+      <h2 style={{ fontSize: 13, marginBottom: 10 }}>Recent RPE</h2>
+      {trends.length === 0 ? (
+        <p style={{ color: "#999", fontSize: 12 }}>No RPE logged yet.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {trends.map((t) => (
+            <div key={t.exerciseId}>
+              <div
+                style={{
+                  color: colorForExercise(t.exerciseId, exercises),
+                  fontSize: 12,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  marginBottom: 4,
+                }}
+              >
+                {t.exerciseName}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                {t.readings.map((r) => (
+                  <div key={r.sessionId} style={{ textAlign: "center" }}>
+                    <div
+                      style={{
+                        fontSize: 9,
+                        color: "#999",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {formatShortDate(r.date)}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        // NEUTRAL_VALUE_COLOR, not "#111" — the page
+                        // background here is actually near-black
+                        // (rgb(10,10,10), prefers-color-scheme dark; see
+                        // known-issues.md's "no design system yet, isn't
+                        // theme-aware" entry), so bare "#111" text with no
+                        // background of its own is nearly invisible.
+                        // Confirmed via getComputedStyle + a real render,
+                        // not just guessed — every other "#111" in this
+                        // file pairs it with an explicit opaque background
+                        // of its own (HoverTooltip's fill, the active
+                        // range-tab button), which this bare text color
+                        // didn't have.
+                        color:
+                          r.avgRpe >= HIGH_RPE_THRESHOLD
+                            ? "#dc2626"
+                            : NEUTRAL_VALUE_COLOR,
+                      }}
+                    >
+                      {r.avgRpe.toFixed(1)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -322,6 +480,7 @@ export default function ProgressCharts({
   oneRmSeries,
   bodyweightSeries,
   hasActiveProgram,
+  recentRpe,
 }: ProgressChartsProps) {
   // Default: everything toggled on. With a handful of tracked exercises
   // (the expected case for a single-user tracker) an overlay of all of them
@@ -385,11 +544,10 @@ export default function ProgressCharts({
       return;
     }
     const ex = activeExercises[nearest.seriesIndex]!;
-    const colorIndex = exerciseList.findIndex((e2) => e2.id === ex.id);
     setExerciseHover({
       x: nearest.x,
       y: nearest.y,
-      color: PALETTE[colorIndex % PALETTE.length]!,
+      color: colorForExercise(ex.id, exerciseList),
       label: `${formatShortDate(nearest.point.date)} — ${ex.name}: ${nearest.point.value} kg`,
     });
   }
@@ -403,7 +561,7 @@ export default function ProgressCharts({
       [bwSliced],
       bwDomain,
       { min: bwMin, max: bwMax },
-      PLOT_W,
+      BW_PLOT_W,
       BW_H,
       12,
       mouseX,
@@ -426,7 +584,11 @@ export default function ProgressCharts({
       style={{
         padding: 24,
         fontFamily: "sans-serif",
-        maxWidth: 760,
+        // 920, not 760 (#56) — wide enough for RpeBox to sit beside the
+        // exercise box without shrinking it below its own tuned width; see
+        // CHART_W's comment for why that width is deliberate and shouldn't
+        // move to make room instead.
+        maxWidth: 920,
         margin: "0 auto",
       }}
     >
@@ -464,137 +626,154 @@ export default function ProgressCharts({
         boxes below.
       </p>
 
-      {/* Exercise overlay box */}
+      {/* Exercise overlay box + recent-RPE sidebar (#56) — flex row so the
+          sidebar sits beside it without shrinking the overlay box below its
+          own tuned width (flex: "0 0 auto" below). Row, not the overlay box
+          itself, carries the bottom margin now. */}
       <div
         style={{
-          border: "1px solid #e5e5e5",
-          borderRadius: 8,
-          padding: 16,
+          display: "flex",
+          gap: 16,
           marginBottom: 16,
+          alignItems: "flex-start",
         }}
       >
-        {/* #53: opt-in escape hatch from #31's active-program-only default
-            — outside the empty-state branch below so it's reachable even
-            when the active program has nothing tracked. */}
-        <label
+        <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 12,
-            color: "#666",
-            marginBottom: 10,
-            cursor: "pointer",
+            // Explicit width, not just flex: "0 0 auto" — without it, this
+            // box's width becomes shrink-to-fit around its own content
+            // (the checkbox row's natural single-line width, which can
+            // exceed CHART_W once several exercises/badges are toggled on)
+            // rather than staying pinned to the SVG's actual width,
+            // squeezing RpeBox narrower than intended and wrapping its
+            // date text (found live-testing #56).
+            width: CHART_W + BOX_CHROME,
+            flex: "0 0 auto",
+            border: "1px solid #e5e5e5",
+            borderRadius: 8,
+            padding: 16,
           }}
         >
-          <input
-            type="checkbox"
-            checked={showAllExercises}
-            onChange={() => setShowAllExercises((v) => !v)}
-          />
-          Show all exercises (including archived programs)
-        </label>
-        {exerciseList.length === 0 ? (
-          <p style={{ color: "#999", fontSize: 13 }}>
-            {showAllExercises
-              ? "No 1RM-tracked exercises found across any program yet."
-              : hasActiveProgram
-                ? "No exercises in the active program are tracked for 1RM yet."
-                : "No active program. Activate one to see its exercises here."}
-          </p>
-        ) : (
-          <>
-            <div
-              style={{
-                display: "flex",
-                gap: 16,
-                marginBottom: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              {exerciseList.map((ex, i) => {
-                const rangeSeries = filterByRange(
-                  oneRmSeries[ex.id] ?? [],
-                  range,
-                );
-                const d = computeDelta(rangeSeries);
-                // #43: only non-bodyweight-based exercises, and only once
-                // there's at least one bodyweight entry anywhere — zero
-                // bodyweight data hides the badge entirely rather than
-                // showing "not enough data yet" for every exercise row.
-                // Also hidden when the exercise itself has zero 1RM data
-                // ever recorded (not just out of the current range) —
-                // otherwise it duplicates DeltaBadge's identical "not
-                // enough data yet" text right next to it, which reads as a
-                // glitch rather than two distinct metrics. A narrow range
-                // with *some* data elsewhere still shows the badge with its
-                // own null state (spec's resolved behavior) — this check is
-                // against the exercise's whole series, not rangeSeries.
-                const showBwMultiple =
-                  !ex.isBodyweightBased &&
-                  bodyweightSeries.length > 0 &&
-                  (oneRmSeries[ex.id]?.length ?? 0) > 0;
-                const bwMultiple = showBwMultiple
-                  ? computeBodyweightMultiple(rangeSeries, bodyweightSeries)
-                  : null;
-                const color = PALETTE[i % PALETTE.length]!;
-                return (
-                  <label
-                    key={ex.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontSize: 13,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={visible[ex.id] ?? false}
-                      onChange={() =>
-                        setVisible((v) => ({ ...v, [ex.id]: !v[ex.id] }))
-                      }
-                    />
-                    <span
+          {/* #53: opt-in escape hatch from #31's active-program-only default
+            — outside the empty-state branch below so it's reachable even
+            when the active program has nothing tracked. */}
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              color: "#666",
+              marginBottom: 10,
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showAllExercises}
+              onChange={() => setShowAllExercises((v) => !v)}
+            />
+            Show all exercises (including archived programs)
+          </label>
+          {exerciseList.length === 0 ? (
+            <p style={{ color: "#999", fontSize: 13 }}>
+              {showAllExercises
+                ? "No 1RM-tracked exercises found across any program yet."
+                : hasActiveProgram
+                  ? "No exercises in the active program are tracked for 1RM yet."
+                  : "No active program. Activate one to see its exercises here."}
+            </p>
+          ) : (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 16,
+                  marginBottom: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                {exerciseList.map((ex) => {
+                  const rangeSeries = filterByRange(
+                    oneRmSeries[ex.id] ?? [],
+                    range,
+                  );
+                  const d = computeDelta(rangeSeries);
+                  // #43: only non-bodyweight-based exercises, and only once
+                  // there's at least one bodyweight entry anywhere — zero
+                  // bodyweight data hides the badge entirely rather than
+                  // showing "not enough data yet" for every exercise row.
+                  // Also hidden when the exercise itself has zero 1RM data
+                  // ever recorded (not just out of the current range) —
+                  // otherwise it duplicates DeltaBadge's identical "not
+                  // enough data yet" text right next to it, which reads as a
+                  // glitch rather than two distinct metrics. A narrow range
+                  // with *some* data elsewhere still shows the badge with its
+                  // own null state (spec's resolved behavior) — this check is
+                  // against the exercise's whole series, not rangeSeries.
+                  const showBwMultiple =
+                    !ex.isBodyweightBased &&
+                    bodyweightSeries.length > 0 &&
+                    (oneRmSeries[ex.id]?.length ?? 0) > 0;
+                  const bwMultiple = showBwMultiple
+                    ? computeBodyweightMultiple(rangeSeries, bodyweightSeries)
+                    : null;
+                  const color = colorForExercise(ex.id, exerciseList);
+                  return (
+                    <label
+                      key={ex.id}
                       style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 5,
-                        background: color,
-                        display: "inline-block",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 13,
+                        cursor: "pointer",
                       }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={visible[ex.id] ?? false}
+                        onChange={() =>
+                          setVisible((v) => ({ ...v, [ex.id]: !v[ex.id] }))
+                        }
+                      />
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 5,
+                          background: color,
+                          display: "inline-block",
+                        }}
+                      />
+                      {ex.name}
+                      {visible[ex.id] && <DeltaBadge value={d} />}
+                      {visible[ex.id] && showBwMultiple && (
+                        <BodyweightMultipleBadge value={bwMultiple} />
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+              <svg
+                ref={exerciseSvgRef}
+                width={CHART_W}
+                height={CHART_H + AXIS_H}
+                onMouseMove={handleExerciseMouseMove}
+                onMouseLeave={() => setExerciseHover(null)}
+              >
+                <g transform={`translate(${AXIS_W},0)`}>
+                  {oneRmDomain && (
+                    <YAxis
+                      min={min}
+                      max={max}
+                      step={Y_STEP}
+                      plotWidth={PLOT_W}
+                      plotHeight={CHART_H}
                     />
-                    {ex.name}
-                    {visible[ex.id] && <DeltaBadge value={d} />}
-                    {visible[ex.id] && showBwMultiple && (
-                      <BodyweightMultipleBadge value={bwMultiple} />
-                    )}
-                  </label>
-                );
-              })}
-            </div>
-            <svg
-              ref={exerciseSvgRef}
-              width={CHART_W}
-              height={CHART_H + AXIS_H}
-              onMouseMove={handleExerciseMouseMove}
-              onMouseLeave={() => setExerciseHover(null)}
-            >
-              <g transform={`translate(${AXIS_W},0)`}>
-                {oneRmDomain && (
-                  <YAxis
-                    min={min}
-                    max={max}
-                    step={Y_STEP}
-                    plotWidth={PLOT_W}
-                    plotHeight={CHART_H}
-                  />
-                )}
-                {oneRmDomain &&
-                  activeSliced.map(({ ex, series }) => {
-                    const i = exerciseList.findIndex((e) => e.id === ex.id);
-                    return (
+                  )}
+                  {oneRmDomain &&
+                    activeSliced.map(({ ex, series }) => (
                       <path
                         key={ex.id}
                         d={seriesToPath(
@@ -609,39 +788,48 @@ export default function ProgressCharts({
                           },
                         )}
                         fill="none"
-                        stroke={PALETTE[i % PALETTE.length]}
+                        stroke={colorForExercise(ex.id, exerciseList)}
                         strokeWidth={LINE_WIDTH}
                         opacity={LINE_OPACITY}
                       />
-                    );
-                  })}
-                {allValues.length === 0 && (
-                  <text
-                    x={PLOT_W / 2}
-                    y={CHART_H / 2}
-                    textAnchor="middle"
-                    fill="#999"
-                    fontSize={13}
-                  >
-                    {activeExercises.length === 0
-                      ? "Toggle an exercise above to see its trend"
-                      : "No logged data in this range yet"}
-                  </text>
-                )}
-                <WeekAxis
-                  domain={oneRmDomain}
-                  width={PLOT_W}
-                  plotHeight={CHART_H}
-                />
-                {exerciseHover && (
-                  <HoverTooltip {...exerciseHover} plotWidth={PLOT_W} />
-                )}
-              </g>
-            </svg>
-            <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
-              est. 1RM (kg), shared axis across toggled exercises
-            </div>
-          </>
+                    ))}
+                  {allValues.length === 0 && (
+                    <text
+                      x={PLOT_W / 2}
+                      y={CHART_H / 2}
+                      textAnchor="middle"
+                      fill="#999"
+                      fontSize={13}
+                    >
+                      {activeExercises.length === 0
+                        ? "Toggle an exercise above to see its trend"
+                        : "No logged data in this range yet"}
+                    </text>
+                  )}
+                  <WeekAxis
+                    domain={oneRmDomain}
+                    width={PLOT_W}
+                    plotHeight={CHART_H}
+                  />
+                  {exerciseHover && (
+                    <HoverTooltip {...exerciseHover} plotWidth={PLOT_W} />
+                  )}
+                </g>
+              </svg>
+              <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
+                est. 1RM (kg), shared axis across toggled exercises
+              </div>
+            </>
+          )}
+        </div>
+        {/* #56: doesn't render at all without an active program — recentRpe
+            is only ever computed (page.tsx) when one exists, so an empty
+            array here is indistinguishable from "active program, nothing
+            logged yet" without this extra check, and the box would
+            otherwise show a pointless empty state alongside "no active
+            program" in the box beside it. */}
+        {hasActiveProgram && (
+          <RpeBox trends={recentRpe} exercises={exercises} />
         )}
       </div>
 
@@ -667,7 +855,7 @@ export default function ProgressCharts({
         ) : (
           <svg
             ref={bwSvgRef}
-            width={CHART_W}
+            width={BW_CHART_W}
             height={BW_H + AXIS_H}
             onMouseMove={handleBwMouseMove}
             onMouseLeave={() => setBwHover(null)}
@@ -678,13 +866,13 @@ export default function ProgressCharts({
                   min={bwMin}
                   max={bwMax}
                   step={Y_STEP}
-                  plotWidth={PLOT_W}
+                  plotWidth={BW_PLOT_W}
                   plotHeight={BW_H}
                 />
               )}
               {bwDomain && (
                 <path
-                  d={seriesToPath(bwSliced, bwDomain, PLOT_W, BW_H, 12, {
+                  d={seriesToPath(bwSliced, bwDomain, BW_PLOT_W, BW_H, 12, {
                     min: bwMin,
                     max: bwMax,
                   })}
@@ -699,8 +887,8 @@ export default function ProgressCharts({
                   opacity={LINE_OPACITY}
                 />
               )}
-              <WeekAxis domain={bwDomain} width={PLOT_W} plotHeight={BW_H} />
-              {bwHover && <HoverTooltip {...bwHover} plotWidth={PLOT_W} />}
+              <WeekAxis domain={bwDomain} width={BW_PLOT_W} plotHeight={BW_H} />
+              {bwHover && <HoverTooltip {...bwHover} plotWidth={BW_PLOT_W} />}
             </g>
           </svg>
         )}

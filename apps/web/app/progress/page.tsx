@@ -1,15 +1,26 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
   bodyweightEntries,
   dayTemplates,
   exerciseInDay,
+  exercises,
+  loggedSets,
   oneRmEstimates,
   programs,
   sessions,
 } from "../../db/schema";
 import ProgressCharts, { type ExerciseOption } from "./ProgressCharts";
-import type { SeriesPoint } from "../../lib/progressRange";
+import {
+  recentExerciseRpeTrends,
+  type SeriesPoint,
+} from "../../lib/progressRange";
+
+// #56: how many of its own most recent RPE-logged sessions the recent-RPE
+// box shows per exercise (not "last N sessions of the program" — see
+// recentExerciseRpeTrends' own comment for why that's a different, wrong
+// question for an exercise trained only every Nth session in rotation).
+const RECENT_RPE_READINGS_PER_EXERCISE = 3;
 
 // Same reasoning as app/programs/page.tsx — not statically prerenderable.
 export const dynamic = "force-dynamic";
@@ -99,6 +110,49 @@ export default async function ProgressPage() {
     value: Number(r.value),
   }));
 
+  // #56: recent-RPE box — display-only, tied to the active program
+  // specifically (same scoping principle as #31's original active-program
+  // default), not global history. Every set that logged an RPE, across
+  // every exercise/day of the active program, joined to exercises for the
+  // name; recentExerciseRpeTrends (lib/) does the per-session averaging and
+  // picks each exercise's own most recent RECENT_RPE_READINGS_PER_EXERCISE
+  // readings (#56 follow-up: grouped by exercise, not by session — see
+  // that function's own comment).
+  const recentRpe = activeProgram
+    ? recentExerciseRpeTrends(
+        (
+          await db
+            .select({
+              sessionId: sessions.id,
+              date: sessions.sessionDate,
+              exerciseId: loggedSets.exerciseId,
+              exerciseName: exercises.name,
+              rpe: loggedSets.rpe,
+            })
+            .from(loggedSets)
+            .innerJoin(sessions, eq(loggedSets.sessionId, sessions.id))
+            .innerJoin(
+              dayTemplates,
+              eq(sessions.dayTemplateId, dayTemplates.id),
+            )
+            .innerJoin(exercises, eq(loggedSets.exerciseId, exercises.id))
+            .where(
+              and(
+                eq(dayTemplates.programId, activeProgram.id),
+                isNotNull(loggedSets.rpe),
+              ),
+            )
+        ).map((r) => ({
+          sessionId: r.sessionId,
+          date: r.date,
+          exerciseId: r.exerciseId,
+          exerciseName: r.exerciseName,
+          rpe: Number(r.rpe),
+        })),
+        RECENT_RPE_READINGS_PER_EXERCISE,
+      )
+    : [];
+
   return (
     <ProgressCharts
       exercises={trackedExercises}
@@ -106,6 +160,7 @@ export default async function ProgressPage() {
       oneRmSeries={oneRmSeries}
       bodyweightSeries={bodyweightSeries}
       hasActiveProgram={activeProgram !== undefined}
+      recentRpe={recentRpe}
     />
   );
 }

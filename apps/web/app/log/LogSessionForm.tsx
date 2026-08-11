@@ -9,6 +9,11 @@
 // when schemeState has none yet (#16).
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import {
+  effectiveReps,
+  effectiveWeight,
+  loggedTotalReps,
+} from "../../lib/logEntry";
 import type { PrescribedSet } from "../../lib/schemes";
 import { logSession, setTrainingMax } from "./actions";
 
@@ -18,6 +23,10 @@ interface ExerciseView {
   schemeType: string;
   sets: PrescribedSet[];
   needsTrainingMax: boolean;
+  // #57: Rep Accumulation's whole-session-total target (undefined for
+  // every other scheme) — the per-set label alone ("weight×—") doesn't say
+  // what that total actually is.
+  repAccumulationTargetTotalReps?: number;
 }
 
 interface SetEntryState {
@@ -54,17 +63,9 @@ function initialEntryState(exercises: ExerciseView[]): EntryState {
   return state;
 }
 
-// The displayed/submitted weight: whatever the user typed, or the current
-// prescription if they haven't touched the field yet (issue #14's
-// "pre-filled from the prescription, overridable").
-function effectiveWeight(
-  entry: SetEntryState,
-  set: PrescribedSet,
-): number | "" {
-  return entry.actualWeightKg === ""
-    ? (set.prescribedWeightKg ?? "")
-    : entry.actualWeightKg;
-}
+// effectiveWeight/effectiveReps/loggedTotalReps: pure pre-fill/aggregation
+// logic, lives in lib/logEntry.ts (code-conventions.md's file-organization
+// rule), imported above.
 
 export default function LogSessionForm({
   programId,
@@ -128,14 +129,11 @@ export default function LogSessionForm({
           const isFailureSet =
             set.prescribedWeightKg === null && set.repTarget === null;
           const weight = effectiveWeight(entry, set);
+          const reps = effectiveReps(entry, set);
           return {
             setNumber: set.setNumber,
             actualWeightKg: isFailureSet ? null : weight === "" ? null : weight,
-            repsAchieved: isFailureSet
-              ? null
-              : entry.repsAchieved === ""
-                ? null
-                : entry.repsAchieved,
+            repsAchieved: isFailureSet ? null : reps === "" ? null : reps,
             rpe: isFailureSet ? null : entry.rpe === "" ? null : entry.rpe,
             isDone: entry.isDone,
           };
@@ -197,13 +195,22 @@ export default function LogSessionForm({
           <div key={ex.exerciseInDayId} style={{ marginBottom: 26 }}>
             <div
               style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
                 fontWeight: 700,
                 marginBottom: 6,
                 borderBottom: "1px solid #111",
                 paddingBottom: 3,
               }}
             >
-              {ex.exerciseName}
+              <span>{ex.exerciseName}</span>
+              {ex.repAccumulationTargetTotalReps !== undefined && (
+                <span style={{ fontWeight: 400, fontSize: 15, color: "#666" }}>
+                  target {ex.repAccumulationTargetTotalReps} reps · logged{" "}
+                  {loggedTotalReps(ex.sets, entries[ex.exerciseInDayId] ?? {})}
+                </span>
+              )}
             </div>
             {ex.sets.map((set) => {
               const isFailureSet =
@@ -258,7 +265,7 @@ export default function LogSessionForm({
                       />
                       <input
                         type="number"
-                        value={entry.repsAchieved}
+                        value={effectiveReps(entry, set)}
                         onChange={(e) =>
                           updateSet(
                             ex.exerciseInDayId,

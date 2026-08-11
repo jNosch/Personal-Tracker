@@ -66,6 +66,14 @@ export default async function LogPage() {
       schemeType: ex.schemeType,
       sets,
       needsTrainingMax,
+      // #57: Rep Accumulation's per-set label already shows "weight×—" (no
+      // per-set target, the target is a whole-session total, #55) — without
+      // this, there's nothing on screen telling you what that total
+      // actually is. undefined for every other scheme.
+      repAccumulationTargetTotalReps:
+        scheme.type === "rep_accumulation"
+          ? scheme.config.targetTotalReps
+          : undefined,
     };
   });
 

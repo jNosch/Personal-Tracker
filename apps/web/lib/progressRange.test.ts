@@ -5,6 +5,8 @@ import {
   filterByRange,
   mondayTicks,
   nearestBodyweight,
+  recentExerciseRpeTrends,
+  type RpeReading,
   type SeriesPoint,
 } from "./progressRange";
 
@@ -146,6 +148,152 @@ describe("computeBodyweightMultiple", () => {
         bw,
       ),
     ).toBe(2); // 200 / 100, ignores the earlier 300kg point entirely
+  });
+});
+
+describe("recentExerciseRpeTrends", () => {
+  const readings: RpeReading[] = [
+    // Squat: 4 separate sessions (06-01 has two sets logging RPE — should
+    // collapse to one averaged point, not two).
+    {
+      sessionId: "s1",
+      date: "2026-06-01",
+      exerciseId: "squat",
+      exerciseName: "Squat",
+      rpe: 7,
+    },
+    {
+      sessionId: "s1",
+      date: "2026-06-01",
+      exerciseId: "squat",
+      exerciseName: "Squat",
+      rpe: 9,
+    },
+    {
+      sessionId: "s2",
+      date: "2026-06-08",
+      exerciseId: "squat",
+      exerciseName: "Squat",
+      rpe: 8,
+    },
+    {
+      sessionId: "s4",
+      date: "2026-06-22",
+      exerciseId: "squat",
+      exerciseName: "Squat",
+      rpe: 9.5,
+    },
+    {
+      sessionId: "s5",
+      date: "2026-06-29",
+      exerciseId: "squat",
+      exerciseName: "Squat",
+      rpe: 7,
+    },
+    // Bench: only ever logged once — fewer readings than the limit.
+    {
+      sessionId: "s1",
+      date: "2026-06-01",
+      exerciseId: "bench",
+      exerciseName: "Bench",
+      rpe: 6,
+    },
+    // Deadlift: one session, two sets.
+    {
+      sessionId: "s3",
+      date: "2026-06-15",
+      exerciseId: "deadlift",
+      exerciseName: "Deadlift",
+      rpe: 6,
+    },
+    {
+      sessionId: "s3",
+      date: "2026-06-15",
+      exerciseId: "deadlift",
+      exerciseName: "Deadlift",
+      rpe: 8,
+    },
+  ];
+
+  it("returns an empty array with no readings", () => {
+    expect(recentExerciseRpeTrends([], 3)).toEqual([]);
+  });
+
+  it("returns an empty array for a non-positive limit", () => {
+    expect(recentExerciseRpeTrends(readings, 0)).toEqual([]);
+  });
+
+  it("averages multiple sets within the same (exercise, session) into one point, rounded to one decimal", () => {
+    const squat = recentExerciseRpeTrends(readings, 10).find(
+      (e) => e.exerciseId === "squat",
+    )!;
+    // s1's two sets: (7+9)/2 = 8.
+    expect(squat.readings.find((r) => r.date === "2026-06-01")?.avgRpe).toBe(8);
+  });
+
+  it("trims each exercise to its own last `limit` sessions, independent of other exercises' recency — the whole point of this function vs. a session-first grouping", () => {
+    // Squat has 4 sessions (06-01, 06-08, 06-22, 06-29); limit 3 should drop
+    // only the oldest *squat* session (06-01), even though Bench/Deadlift
+    // sessions fall in between chronologically.
+    const squat = recentExerciseRpeTrends(readings, 3).find(
+      (e) => e.exerciseId === "squat",
+    )!;
+    expect(squat.readings.map((r) => r.date)).toEqual([
+      "2026-06-08",
+      "2026-06-22",
+      "2026-06-29",
+    ]);
+  });
+
+  it("keeps every reading, still oldest-first, when an exercise has fewer than the limit", () => {
+    const bench = recentExerciseRpeTrends(readings, 3).find(
+      (e) => e.exerciseId === "bench",
+    )!;
+    expect(bench.readings).toEqual([
+      { sessionId: "s1", date: "2026-06-01", avgRpe: 6 },
+    ]);
+  });
+
+  it("orders each exercise's own readings oldest first", () => {
+    const squat = recentExerciseRpeTrends(readings, 10).find(
+      (e) => e.exerciseId === "squat",
+    )!;
+    expect(squat.readings.map((r) => r.date)).toEqual([
+      "2026-06-01",
+      "2026-06-08",
+      "2026-06-22",
+      "2026-06-29",
+    ]);
+  });
+
+  it("sorts exercises alphabetically by name", () => {
+    expect(
+      recentExerciseRpeTrends(readings, 3).map((e) => e.exerciseName),
+    ).toEqual(["Bench", "Deadlift", "Squat"]);
+  });
+
+  it("groups by sessionId, not date — two sessions sharing a calendar day stay distinct", () => {
+    const sameDay: RpeReading[] = [
+      {
+        sessionId: "a",
+        date: "2026-06-01",
+        exerciseId: "squat",
+        exerciseName: "Squat",
+        rpe: 6,
+      },
+      {
+        sessionId: "b",
+        date: "2026-06-01",
+        exerciseId: "squat",
+        exerciseName: "Squat",
+        rpe: 10,
+      },
+    ];
+    const squat = recentExerciseRpeTrends(sameDay, 5).find(
+      (e) => e.exerciseId === "squat",
+    )!;
+    expect(squat.readings).toHaveLength(2);
+    expect(new Set(squat.readings.map((r) => r.sessionId)).size).toBe(2);
   });
 });
 
