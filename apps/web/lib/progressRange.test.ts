@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeBodyweightMultiple,
   computeDelta,
   filterByRange,
   mondayTicks,
+  nearestBodyweight,
   type SeriesPoint,
 } from "./progressRange";
 
@@ -76,6 +78,74 @@ describe("computeDelta", () => {
         { date: "2026-02-01", value: 100 },
       ]),
     ).toBe(0);
+  });
+});
+
+describe("nearestBodyweight", () => {
+  const bw: SeriesPoint[] = [
+    { date: "2026-01-01", value: 80 },
+    { date: "2026-03-01", value: 82 },
+    { date: "2026-07-01", value: 85 },
+  ];
+
+  it("returns null when there are no bodyweight entries at all", () => {
+    expect(nearestBodyweight([], "2026-01-15")).toBeNull();
+  });
+
+  it("picks the closer entry by absolute date difference", () => {
+    // 2026-01-15 is 14 days after 2026-01-01, 45 days before 2026-03-01.
+    expect(nearestBodyweight(bw, "2026-01-15")).toBe(80);
+  });
+
+  it("matches either side of the target date, not just before it", () => {
+    // 2026-06-01 is closer to 2026-07-01 (30 days) than 2026-03-01 (92 days).
+    expect(nearestBodyweight(bw, "2026-06-01")).toBe(85);
+  });
+
+  it("returns an exact match when the date lines up", () => {
+    expect(nearestBodyweight(bw, "2026-03-01")).toBe(82);
+  });
+});
+
+describe("computeBodyweightMultiple", () => {
+  const bw: SeriesPoint[] = [
+    { date: "2026-01-01", value: 80 },
+    { date: "2026-07-01", value: 100 },
+  ];
+
+  it("returns null when the (range-filtered) 1RM series is empty", () => {
+    expect(computeBodyweightMultiple([], bw)).toBeNull();
+  });
+
+  it("returns null when there's no bodyweight data to match against", () => {
+    expect(
+      computeBodyweightMultiple([{ date: "2026-01-01", value: 160 }], []),
+    ).toBeNull();
+  });
+
+  it("divides the latest 1RM point by the nearest bodyweight, rounded to one decimal", () => {
+    // Latest point is 2026-07-05 — nearer 2026-07-01 (100kg) than 2026-01-01.
+    expect(
+      computeBodyweightMultiple(
+        [
+          { date: "2026-01-05", value: 140 },
+          { date: "2026-07-05", value: 205 },
+        ],
+        bw,
+      ),
+    ).toBe(2.1); // 205 / 100 = 2.05 -> rounds to 2.1
+  });
+
+  it("uses only the latest point, not a first-vs-last comparison like computeDelta", () => {
+    expect(
+      computeBodyweightMultiple(
+        [
+          { date: "2026-01-05", value: 300 },
+          { date: "2026-07-05", value: 200 },
+        ],
+        bw,
+      ),
+    ).toBe(2); // 200 / 100, ignores the earlier 300kg point entirely
   });
 });
 

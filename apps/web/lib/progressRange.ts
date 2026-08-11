@@ -49,6 +49,53 @@ export function computeDelta(series: SeriesPoint[]): number | null {
   return Math.round((last - first) * 10) / 10;
 }
 
+// Nearest bodyweight entry to a given date, by absolute date difference
+// either side (#43) — same convention `app/log/actions.ts:126-133` already
+// uses at session-save time, no distance/staleness check there either.
+// `bodyweightSeries` is expected to be the *whole* table, not range-filtered
+// (#43's resolved spec: the ratio badge only disappears when there's zero
+// bodyweight data at all, not merely a distant match). Null when there's
+// nothing to match against.
+export function nearestBodyweight(
+  bodyweightSeries: SeriesPoint[],
+  date: string,
+): number | null {
+  if (bodyweightSeries.length === 0) return null;
+  const target = new Date(`${date}T00:00:00Z`).getTime();
+  let best = bodyweightSeries[0]!;
+  let bestDiff = Math.abs(
+    new Date(`${best.date}T00:00:00Z`).getTime() - target,
+  );
+  for (const p of bodyweightSeries) {
+    const diff = Math.abs(new Date(`${p.date}T00:00:00Z`).getTime() - target);
+    if (diff < bestDiff) {
+      best = p;
+      bestDiff = diff;
+    }
+  }
+  return best.value;
+}
+
+// Current bodyweight-multiple ratio for one exercise (#43) — latest 1RM
+// point in the (already range-filtered) series divided by the bodyweight
+// nearest to that point's date. Current ratio only, not a "was X now Y"
+// comparison (resolved spec) — computeDelta already covers "how much
+// changed" in kg terms elsewhere. Null when there's no 1RM point in the
+// filtered window (caller shows the same "not enough data yet" language
+// computeDelta's null already gets) — a distinct case from "no bodyweight
+// data at all," which the caller gates separately since that one hides the
+// badge entirely rather than showing empty-state text.
+export function computeBodyweightMultiple(
+  oneRmSeries: SeriesPoint[],
+  bodyweightSeries: SeriesPoint[],
+): number | null {
+  if (oneRmSeries.length === 0) return null;
+  const latest = oneRmSeries[oneRmSeries.length - 1]!;
+  const bw = nearestBodyweight(bodyweightSeries, latest.date);
+  if (bw === null || bw === 0) return null;
+  return Math.round((latest.value / bw) * 10) / 10;
+}
+
 // Every Monday's ISO date within [startDate, endDate], inclusive of both
 // endpoints — the chart's "rough" weekly axis labels, deliberately not tied
 // to which days actually have a data point (that would misalign with an

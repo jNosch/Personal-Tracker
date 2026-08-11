@@ -11,6 +11,7 @@
 
 import { useRef, useState } from "react";
 import {
+  computeBodyweightMultiple,
   computeDelta,
   filterByRange,
   RANGES,
@@ -247,6 +248,12 @@ const BODYWEIGHT_COLOR = "#db2777";
 export interface ExerciseOption {
   id: string;
   name: string;
+  // Gates the bodyweight-multiple badge (#43) — bodyweight-based exercises
+  // (weighted pull-ups/dips/etc.) already fold bodyweight into
+  // estimated_1rm_kg as *total* load (see lib/oneRm.ts), so "1RM ÷
+  // bodyweight" there would be a technically-valid but culturally-confusing
+  // number; the metric lifters actually track for those is "added weight."
+  isBodyweightBased: boolean;
 }
 
 interface ProgressChartsProps {
@@ -276,6 +283,27 @@ function DeltaBadge({ value }: { value: number | null }) {
     >
       {positive ? "+" : ""}
       {value} kg
+    </span>
+  );
+}
+
+// Bodyweight-multiple badge (#43) — "where do I stand right now" (e.g.
+// `2.0x BW`), distinct from DeltaBadge's "how much changed" question next
+// to it. Deliberately neutral/muted, not green/red — this is a snapshot
+// standing, not a gain/loss judgment, so a colored treatment would wrongly
+// imply "good vs. bad." Reuses DeltaBadge's null -> "not enough data yet"
+// treatment for the in-range-but-no-point case; the caller is responsible
+// for not rendering this at all when there's zero bodyweight data anywhere
+// (a different, badge-disappears-entirely case per #43's resolved spec).
+function BodyweightMultipleBadge({ value }: { value: number | null }) {
+  if (value === null) {
+    return (
+      <span style={{ fontSize: 12, color: "#999" }}>not enough data yet</span>
+    );
+  }
+  return (
+    <span style={{ fontSize: 12, color: "#666", fontWeight: 600 }}>
+      {value.toFixed(1)}x BW
     </span>
   );
 }
@@ -445,9 +473,20 @@ export default function ProgressCharts({
               }}
             >
               {exercises.map((ex, i) => {
-                const d = computeDelta(
-                  filterByRange(oneRmSeries[ex.id] ?? [], range),
+                const rangeSeries = filterByRange(
+                  oneRmSeries[ex.id] ?? [],
+                  range,
                 );
+                const d = computeDelta(rangeSeries);
+                // #43: only non-bodyweight-based exercises, and only once
+                // there's at least one bodyweight entry anywhere — zero
+                // bodyweight data hides the badge entirely rather than
+                // showing "not enough data yet" for every exercise row.
+                const showBwMultiple =
+                  !ex.isBodyweightBased && bodyweightSeries.length > 0;
+                const bwMultiple = showBwMultiple
+                  ? computeBodyweightMultiple(rangeSeries, bodyweightSeries)
+                  : null;
                 const color = PALETTE[i % PALETTE.length]!;
                 return (
                   <label
@@ -478,6 +517,9 @@ export default function ProgressCharts({
                     />
                     {ex.name}
                     {visible[ex.id] && <DeltaBadge value={d} />}
+                    {visible[ex.id] && showBwMultiple && (
+                      <BodyweightMultipleBadge value={bwMultiple} />
+                    )}
                   </label>
                 );
               })}
