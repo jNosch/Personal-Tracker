@@ -11,7 +11,8 @@ This is a `pnpm` + `turbo` monorepo. `apps/web` is the actual app (Next.js); `ap
 3. **Env vars**: `cp apps/web/.env.example apps/web/.env.local` and adjust if needed — defaults already match the compose credentials above.
 4. **Run migrations**: `pnpm --filter web db:migrate`.
 5. **Seed the exercise library**: `pnpm --filter web db:seed` — inserts the exercise library from `apps/web/db/seed-data.ts`; safe to re-run, only inserts names not already present.
-6. **Run the app**: `pnpm --filter web dev` — [http://localhost:3000](http://localhost:3000).
+6. *(Optional)* **Seed realistic demo data**: `pnpm --filter web db:seed:demo` (#49) — generates ~4 months of simulated training history (an active SBD/531 program, an archived Dip & Pull-up program, weekly bodyweight entries) so the Progress/Log pages have something realistic to look at. Requires step 5 first. Local-dev-only — refuses to run against anything that doesn't look like the docker-compose DB above. Destructive but narrowly scoped: each run wipes and regenerates only its own previously-seeded rows, deactivating whatever program was active (reactivate your own from `/programs` afterward if you switch back). Deterministic — reruns produce the same data.
+7. **Run the app**: `pnpm --filter web dev` — [http://localhost:3000](http://localhost:3000).
 
 Useful `apps/web` scripts: `db:studio` (Drizzle Studio), `test` / `test:integration`, `lint`, `check-types`. See [docs/engineering/testing.md](docs/engineering/testing.md) for the test split and [docs/engineering/ci.md](docs/engineering/ci.md) for what CI enforces.
 
