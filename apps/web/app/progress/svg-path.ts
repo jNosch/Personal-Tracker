@@ -180,7 +180,11 @@ export function nearestHoverPoint(
   let best: HoverResult | null = null;
   let bestDist = Infinity;
   seriesList.forEach((series, seriesIndex) => {
-    if (series.length === 0) return;
+    // A single-point series never gets a visible stroke — seriesToPath's
+    // `M x,y` alone with no `L` draws nothing — so it shouldn't be
+    // hoverable either; a phantom tooltip for a line nothing is drawing
+    // reads as a bug (found live-testing #43, unrelated to that ticket).
+    if (series.length < 2) return;
     let nearestIndex = 0;
     let nearestXDist = Infinity;
     series.forEach((_, i) => {

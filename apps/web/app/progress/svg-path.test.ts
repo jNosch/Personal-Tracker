@@ -165,6 +165,36 @@ describe("nearestHoverPoint", () => {
     ).toBeNull();
   });
 
+  it("ignores a single-point series — seriesToPath draws nothing for it, so it shouldn't be hoverable either", () => {
+    const onePoint: SeriesPoint[] = [{ date: "2026-08-08", value: 5 }];
+    const result = nearestHoverPoint(
+      [onePoint],
+      twoWeekDomain,
+      { min: 0, max: 10 },
+      100,
+      100,
+      10,
+      50, // right on top of the single point's x
+      50, // and its y
+    );
+    expect(result).toBeNull();
+  });
+
+  it("still finds a two-point series' point even when a single-point series is closer, since the single-point one is never a candidate", () => {
+    const onePoint: SeriesPoint[] = [{ date: "2026-08-08", value: 5 }];
+    const result = nearestHoverPoint(
+      [onePoint, seriesA],
+      twoWeekDomain,
+      { min: 0, max: 10 },
+      100,
+      100,
+      10,
+      50,
+      50,
+    );
+    expect(result?.seriesIndex).toBe(1);
+  });
+
   it("finds the nearest point by x (time) distance within a single series", () => {
     const result = nearestHoverPoint(
       [seriesA],
