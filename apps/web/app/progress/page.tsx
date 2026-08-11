@@ -42,7 +42,11 @@ export default async function ProgressPage() {
           .flatMap((d) => d.exercises)
           .map((e) => e.exercise)
           .filter((ex) => ex.tracksOneRm && !ex.isArchived)
-          .map((ex) => ({ id: ex.id, name: ex.name })),
+          .map((ex) => ({
+            id: ex.id,
+            name: ex.name,
+            isBodyweightBased: ex.isBodyweightBased,
+          })),
       ).sort((a, b) => a.name.localeCompare(b.name))
     : [];
 
