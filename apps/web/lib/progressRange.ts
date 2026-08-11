@@ -99,34 +99,61 @@ export function computeBodyweightMultiple(
 export interface RpeReading {
   sessionId: string;
   date: string; // ISO date
+  exerciseId: string;
+  exerciseName: string;
   rpe: number;
+}
+
+export interface ExerciseRpe {
+  exerciseId: string;
+  exerciseName: string;
+  avgRpe: number;
 }
 
 export interface SessionRpe {
   sessionId: string;
   date: string; // ISO date
-  avgRpe: number;
+  // Per exercise, not one blended session average (#56 follow-up — a single
+  // number across every exercise in the session hid which lift the effort
+  // actually came from). Alphabetical by name for a stable, predictable
+  // order rather than DB/insertion order.
+  exercises: ExerciseRpe[];
 }
 
-// Averages RPE across every set that logged one, grouped by session, and
-// returns the `limit` most recent sessions in chronological (oldest-first)
-// order (#56) — matches how the rest of this page reads time
-// left-to-right/top-to-bottom, so a climbing trend reads as climbing, not
-// descending. Grouped by sessionId, not date — two sessions can share a
-// calendar day (same lesson as #46's same-day chart collapse: never key
-// time-series grouping off date strings alone when a stable id exists).
-// Purely a display aggregate, not an autoregulation input (#56's resolved
-// scope) — no progression math reads this.
+// Averages RPE per exercise within each session, and returns the `limit`
+// most recent sessions in chronological (oldest-first) order (#56) —
+// matches how the rest of this page reads time left-to-right/
+// top-to-bottom, so a climbing trend reads as climbing, not descending.
+// Grouped by sessionId, not date — two sessions can share a calendar day
+// (same lesson as #46's same-day chart collapse: never key time-series
+// grouping off date strings alone when a stable id exists). Purely a
+// display aggregate, not an autoregulation input (#56's resolved scope) —
+// no progression math reads this.
 export function recentSessionRpe(
   readings: RpeReading[],
   limit: number,
 ): SessionRpe[] {
   if (limit <= 0) return [];
-  const bySession = new Map<string, { date: string; values: number[] }>();
+  const bySession = new Map<
+    string,
+    {
+      date: string;
+      byExercise: Map<string, { name: string; values: number[] }>;
+    }
+  >();
   for (const r of readings) {
-    const existing = bySession.get(r.sessionId);
+    let session = bySession.get(r.sessionId);
+    if (!session) {
+      session = { date: r.date, byExercise: new Map() };
+      bySession.set(r.sessionId, session);
+    }
+    const existing = session.byExercise.get(r.exerciseId);
     if (existing) existing.values.push(r.rpe);
-    else bySession.set(r.sessionId, { date: r.date, values: [r.rpe] });
+    else
+      session.byExercise.set(r.exerciseId, {
+        name: r.exerciseName,
+        values: [r.rpe],
+      });
   }
   return [...bySession.entries()]
     .sort(([, a], [, b]) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
@@ -134,10 +161,16 @@ export function recentSessionRpe(
     .map(([sessionId, s]) => ({
       sessionId,
       date: s.date,
-      avgRpe:
-        Math.round(
-          (s.values.reduce((sum, v) => sum + v, 0) / s.values.length) * 10,
-        ) / 10,
+      exercises: [...s.byExercise.entries()]
+        .map(([exerciseId, e]) => ({
+          exerciseId,
+          exerciseName: e.name,
+          avgRpe:
+            Math.round(
+              (e.values.reduce((sum, v) => sum + v, 0) / e.values.length) * 10,
+            ) / 10,
+        }))
+        .sort((a, b) => a.exerciseName.localeCompare(b.exerciseName)),
     }))
     .reverse();
 }

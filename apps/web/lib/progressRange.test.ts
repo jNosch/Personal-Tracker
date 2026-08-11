@@ -153,13 +153,55 @@ describe("computeBodyweightMultiple", () => {
 
 describe("recentSessionRpe", () => {
   const readings: RpeReading[] = [
-    { sessionId: "s1", date: "2026-06-01", rpe: 7 },
-    { sessionId: "s1", date: "2026-06-01", rpe: 9 },
-    { sessionId: "s2", date: "2026-06-08", rpe: 8 },
-    { sessionId: "s3", date: "2026-06-15", rpe: 6 },
-    { sessionId: "s3", date: "2026-06-15", rpe: 8 },
-    { sessionId: "s3", date: "2026-06-15", rpe: 7 },
-    { sessionId: "s4", date: "2026-06-22", rpe: 9.5 },
+    {
+      sessionId: "s1",
+      date: "2026-06-01",
+      exerciseId: "squat",
+      exerciseName: "Squat",
+      rpe: 7,
+    },
+    {
+      sessionId: "s1",
+      date: "2026-06-01",
+      exerciseId: "squat",
+      exerciseName: "Squat",
+      rpe: 9,
+    },
+    {
+      sessionId: "s1",
+      date: "2026-06-01",
+      exerciseId: "bench",
+      exerciseName: "Bench",
+      rpe: 6,
+    },
+    {
+      sessionId: "s2",
+      date: "2026-06-08",
+      exerciseId: "squat",
+      exerciseName: "Squat",
+      rpe: 8,
+    },
+    {
+      sessionId: "s3",
+      date: "2026-06-15",
+      exerciseId: "deadlift",
+      exerciseName: "Deadlift",
+      rpe: 6,
+    },
+    {
+      sessionId: "s3",
+      date: "2026-06-15",
+      exerciseId: "deadlift",
+      exerciseName: "Deadlift",
+      rpe: 8,
+    },
+    {
+      sessionId: "s4",
+      date: "2026-06-22",
+      exerciseId: "squat",
+      exerciseName: "Squat",
+      rpe: 9.5,
+    },
   ];
 
   it("returns an empty array with no readings", () => {
@@ -170,11 +212,15 @@ describe("recentSessionRpe", () => {
     expect(recentSessionRpe(readings, 0)).toEqual([]);
   });
 
-  it("averages every reading within a session, rounded to one decimal", () => {
-    // s1: (7 + 9) / 2 = 8. s3: (6 + 8 + 7) / 3 = 7.
+  it("averages per exercise within a session, rounded to one decimal, not blended across exercises", () => {
+    // s1: Squat (7+9)/2=8, Bench stays 6 — two separate entries, not one
+    // blended (7+9+6)/3 number.
     const result = recentSessionRpe(readings, 4);
-    expect(result.find((r) => r.date === "2026-06-01")?.avgRpe).toBe(8);
-    expect(result.find((r) => r.date === "2026-06-15")?.avgRpe).toBe(7);
+    const s1 = result.find((r) => r.date === "2026-06-01")!;
+    expect(s1.exercises).toEqual([
+      { exerciseId: "bench", exerciseName: "Bench", avgRpe: 6 },
+      { exerciseId: "squat", exerciseName: "Squat", avgRpe: 8 },
+    ]);
   });
 
   it("returns the `limit` most recent sessions, oldest first", () => {
@@ -196,14 +242,31 @@ describe("recentSessionRpe", () => {
     ]);
   });
 
+  it("sorts exercises within a session alphabetically by name", () => {
+    const result = recentSessionRpe(readings, 4);
+    const s1 = result.find((r) => r.date === "2026-06-01")!;
+    expect(s1.exercises.map((e) => e.exerciseName)).toEqual(["Bench", "Squat"]);
+  });
+
   it("groups by sessionId, not date — two sessions sharing a calendar day stay distinct", () => {
     const sameDay: RpeReading[] = [
-      { sessionId: "a", date: "2026-06-01", rpe: 6 },
-      { sessionId: "b", date: "2026-06-01", rpe: 10 },
+      {
+        sessionId: "a",
+        date: "2026-06-01",
+        exerciseId: "squat",
+        exerciseName: "Squat",
+        rpe: 6,
+      },
+      {
+        sessionId: "b",
+        date: "2026-06-01",
+        exerciseId: "squat",
+        exerciseName: "Squat",
+        rpe: 10,
+      },
     ];
     const result = recentSessionRpe(sameDay, 5);
     expect(result).toHaveLength(2);
-    expect(result.map((r) => r.avgRpe).sort((a, b) => a - b)).toEqual([6, 10]);
     // sessionId survives onto the result — callers need a stable identity
     // to key a list on, since two entries can share an identical date.
     expect(new Set(result.map((r) => r.sessionId)).size).toBe(2);

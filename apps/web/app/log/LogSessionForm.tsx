@@ -18,6 +18,10 @@ interface ExerciseView {
   schemeType: string;
   sets: PrescribedSet[];
   needsTrainingMax: boolean;
+  // #57: Rep Accumulation's whole-session-total target (undefined for
+  // every other scheme) — the per-set label alone ("weight×—") doesn't say
+  // what that total actually is.
+  repAccumulationTargetTotalReps?: number;
 }
 
 interface SetEntryState {
@@ -75,6 +79,19 @@ function effectiveWeight(
 function effectiveReps(entry: SetEntryState, set: PrescribedSet): number | "" {
   if (entry.repsAchieved !== "") return entry.repsAchieved;
   return typeof set.repTarget === "number" ? set.repTarget : "";
+}
+
+// Live running total for Rep Accumulation's whole-session target (#57) —
+// sums whatever's actually been typed into each set's reps field so far.
+// Deliberately reads entry.repsAchieved directly, not effectiveReps: Rep
+// Accumulation's repTarget is always null (schemes.ts), so effectiveReps
+// never pre-fills it anyway, but reading the raw entry keeps this
+// unambiguous ("what the user actually entered") regardless of that.
+function loggedTotalReps(ex: ExerciseView, entries: EntryState): number {
+  return ex.sets.reduce((sum, set) => {
+    const reps = entries[ex.exerciseInDayId]?.[set.setNumber]?.repsAchieved;
+    return sum + (typeof reps === "number" ? reps : 0);
+  }, 0);
 }
 
 export default function LogSessionForm({
@@ -205,13 +222,22 @@ export default function LogSessionForm({
           <div key={ex.exerciseInDayId} style={{ marginBottom: 26 }}>
             <div
               style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
                 fontWeight: 700,
                 marginBottom: 6,
                 borderBottom: "1px solid #111",
                 paddingBottom: 3,
               }}
             >
-              {ex.exerciseName}
+              <span>{ex.exerciseName}</span>
+              {ex.repAccumulationTargetTotalReps !== undefined && (
+                <span style={{ fontWeight: 400, fontSize: 15, color: "#666" }}>
+                  target {ex.repAccumulationTargetTotalReps} reps · logged{" "}
+                  {loggedTotalReps(ex, entries)}
+                </span>
+              )}
             </div>
             {ex.sets.map((set) => {
               const isFailureSet =

@@ -4,6 +4,7 @@ import {
   bodyweightEntries,
   dayTemplates,
   exerciseInDay,
+  exercises,
   loggedSets,
   oneRmEstimates,
   programs,
@@ -107,9 +108,10 @@ export default async function ProgressPage() {
   // #56: recent-RPE box — display-only, tied to the active program
   // specifically (same scoping principle as #31's original active-program
   // default), not global history. Every set that logged an RPE, across
-  // every exercise/day of the active program; recentSessionRpe (lib/) does
-  // the per-session averaging and picks the most recent
-  // RECENT_RPE_SESSION_COUNT.
+  // every exercise/day of the active program, joined to exercises for the
+  // name (#56 follow-up: broken out per exercise, not one blended session
+  // average); recentSessionRpe (lib/) does the per-session/per-exercise
+  // averaging and picks the most recent RECENT_RPE_SESSION_COUNT sessions.
   const recentRpe = activeProgram
     ? recentSessionRpe(
         (
@@ -117,6 +119,8 @@ export default async function ProgressPage() {
             .select({
               sessionId: sessions.id,
               date: sessions.sessionDate,
+              exerciseId: loggedSets.exerciseId,
+              exerciseName: exercises.name,
               rpe: loggedSets.rpe,
             })
             .from(loggedSets)
@@ -125,6 +129,7 @@ export default async function ProgressPage() {
               dayTemplates,
               eq(sessions.dayTemplateId, dayTemplates.id),
             )
+            .innerJoin(exercises, eq(loggedSets.exerciseId, exercises.id))
             .where(
               and(
                 eq(dayTemplates.programId, activeProgram.id),
@@ -134,6 +139,8 @@ export default async function ProgressPage() {
         ).map((r) => ({
           sessionId: r.sessionId,
           date: r.date,
+          exerciseId: r.exerciseId,
+          exerciseName: r.exerciseName,
           rpe: Number(r.rpe),
         })),
         RECENT_RPE_SESSION_COUNT,

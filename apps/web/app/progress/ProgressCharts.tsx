@@ -222,16 +222,31 @@ const PALETTE = [
 const CHART_W = 660;
 const CHART_H = 300;
 const BW_H = 120;
+// Bodyweight box's own width (#58) — deliberately separate from CHART_W,
+// not shared. The exercise-overlay box got an explicit fixed width (#56,
+// see below) so RpeBox has somewhere stable to sit beside it, but the
+// bodyweight box is still a plain full-width block with no sidebar — it
+// stretches to fill the (now-920, was-760) container automatically, and if
+// its SVG stayed pinned to CHART_W the extra room would just show up as a
+// visibly empty gap on the right (found live-testing #56's container
+// widen). Same box-model math as CHART_W's own comment, just against the
+// new 920 container: 920 - 24*2(container padding) - (1+16)*2(box
+// border+padding) = 838px available; 830 leaves the same small margin
+// CHART_W's 660-vs-678 choice did.
+const BW_CHART_W = 830;
 // Extra strip below the plotted line, reserved for WeekAxis's ticks and
 // date labels. Kept constant regardless of whether there's data to show an
 // axis for, so toggling checkboxes never shifts the chart's overall height.
 const AXIS_H = 24;
 // Left margin reserved for YAxis's value labels — same reasoning as AXIS_H,
-// but subtracted from CHART_W rather than added to it (see above).
+// but subtracted from CHART_W rather than added to it (see above). Shared
+// by both boxes — only the chart width itself (CHART_W vs BW_CHART_W)
+// differs between them.
 const AXIS_W = 40;
 // Actual plotting width once AXIS_W's margin is carved out — every line,
 // gridline, tick, and hover lookup operates in this width, not CHART_W.
 const PLOT_W = CHART_W - AXIS_W;
+const BW_PLOT_W = BW_CHART_W - AXIS_W;
 // Fixed Y-axis gridline step (#44) — same 10kg step for both boxes. The
 // original 5kg/1kg split (per box's own typical range) produced far too
 // many overlapping gridlines once the visible range actually got wide —
@@ -249,7 +264,7 @@ const BODYWEIGHT_COLOR = "#db2777";
 // "you might need a deload" signal RpeBox exists to surface (#56). Not a
 // resolved spec number, an implementation judgement call — easy to retune
 // since it's named, not scattered as a bare literal.
-const HIGH_RPE_THRESHOLD = 8.5;
+const HIGH_RPE_THRESHOLD = 9;
 
 export interface ExerciseOption {
   id: string;
@@ -328,15 +343,39 @@ function BodyweightMultipleBadge({ value }: { value: number | null }) {
   );
 }
 
-// Small vertical sidebar next to the exercise overlay box (#56) — deliberately
-// separate from that box rather than merged into its header, since it's
-// scoped to the active program specifically, not to whichever exercises are
-// currently toggled. High RPE (>= 8.5, a near-maximal-effort set) gets a
-// warning color — unlike DeltaBadge/BodyweightMultipleBadge's deliberate
+// Small vertical sidebar next to the exercise overlay box (#56) —
+// deliberately separate from that box rather than merged into its header,
+// since it's scoped to the active program specifically, not to whichever
+// exercises are currently toggled. Broken out per exercise, not one
+// blended session average (#56 follow-up — a single number across every
+// exercise in the session hid which lift the effort actually came from).
+// Each exercise's name is colored to match its line in the overlay chart
+// above when it's one of the chart's own toggleable (tracks_1rm)
+// exercises, so a glance at "which color is climbing" up there matches
+// "which color is spiking" down here; accessories/isolation work (never in
+// that chart at all) get a neutral gray instead of an arbitrary color that
+// wouldn't mean anything. High RPE (>= HIGH_RPE_THRESHOLD, near-maximal
+// effort) gets a warning color on the *number*, independent of the name's
+// identity color — unlike DeltaBadge/BodyweightMultipleBadge's deliberate
 // neutrality, this box exists specifically to flag "you might need a
 // deload," so a plain "here's a number" treatment would undersell the one
 // thing it's for.
-function RpeBox({ sessions }: { sessions: SessionRpe[] }) {
+function RpeBox({
+  sessions,
+  exercises,
+}: {
+  sessions: SessionRpe[];
+  // Active-program-scoped list (the `exercises` prop, not `allExercises`)
+  // — RpeBox is itself always active-program-scoped, so its colors should
+  // match what the chart looks like with the "show all" toggle off, not
+  // shift depending on that toggle's current state.
+  exercises: ExerciseOption[];
+}) {
+  function nameColor(exerciseId: string): string {
+    const i = exercises.findIndex((e) => e.id === exerciseId);
+    return i === -1 ? "#999" : PALETTE[i % PALETTE.length]!;
+  }
+
   return (
     <div
       style={{
@@ -351,27 +390,73 @@ function RpeBox({ sessions }: { sessions: SessionRpe[] }) {
       {sessions.length === 0 ? (
         <p style={{ color: "#999", fontSize: 12 }}>No RPE logged yet.</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {sessions.map((s) => (
-            <div
-              key={s.sessionId}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: 12,
-              }}
-            >
-              <span style={{ color: "#999", whiteSpace: "nowrap" }}>
-                {formatShortDate(s.date)}
-              </span>
-              <span
+            <div key={s.sessionId}>
+              <div
                 style={{
-                  fontWeight: 600,
-                  color: s.avgRpe >= HIGH_RPE_THRESHOLD ? "#dc2626" : "#111",
+                  color: "#999",
+                  fontSize: 11,
+                  whiteSpace: "nowrap",
+                  marginBottom: 3,
                 }}
               >
-                {s.avgRpe.toFixed(1)}
-              </span>
+                {formatShortDate(s.date)}
+              </div>
+              {s.exercises.map((ex) => (
+                <div
+                  key={ex.exerciseId}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    fontSize: 12,
+                  }}
+                >
+                  <span
+                    style={{
+                      // flex: "1 1 auto" + minWidth: 0 (not the default
+                      // min-width: auto flex items get) — without both, a
+                      // long name like "Barbell Back Squat" refuses to
+                      // shrink and pushes the RPE value out past the box
+                      // entirely, rendering nowhere visible (found
+                      // live-testing this exact change: the value just
+                      // vanished, not merely misaligned).
+                      flex: "1 1 auto",
+                      minWidth: 0,
+                      color: nameColor(ex.exerciseId),
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {ex.exerciseName}
+                  </span>
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                      // "#666" (matches BodyweightMultipleBadge's neutral
+                      // value color elsewhere in this file), not "#111" —
+                      // the page background here is actually near-black
+                      // (rgb(10,10,10), prefers-color-scheme dark; see
+                      // known-issues.md's "no design system yet, isn't
+                      // theme-aware" entry), so bare "#111" text with no
+                      // background of its own is nearly invisible.
+                      // Confirmed via getComputedStyle + a real render, not
+                      // just guessed — every other "#111" in this file
+                      // pairs it with an explicit opaque background of its
+                      // own (HoverTooltip's fill, the active range-tab
+                      // button), which this bare text color didn't have.
+                      color:
+                        ex.avgRpe >= HIGH_RPE_THRESHOLD ? "#dc2626" : "#666",
+                    }}
+                  >
+                    {ex.avgRpe.toFixed(1)}
+                  </span>
+                </div>
+              ))}
             </div>
           ))}
         </div>
@@ -468,7 +553,7 @@ export default function ProgressCharts({
       [bwSliced],
       bwDomain,
       { min: bwMin, max: bwMax },
-      PLOT_W,
+      BW_PLOT_W,
       BW_H,
       12,
       mouseX,
@@ -740,7 +825,9 @@ export default function ProgressCharts({
             logged yet" without this extra check, and the box would
             otherwise show a pointless empty state alongside "no active
             program" in the box beside it. */}
-        {hasActiveProgram && <RpeBox sessions={recentRpe} />}
+        {hasActiveProgram && (
+          <RpeBox sessions={recentRpe} exercises={exercises} />
+        )}
       </div>
 
       {/* Bodyweight box — always its own, never merged into the overlay */}
@@ -765,7 +852,7 @@ export default function ProgressCharts({
         ) : (
           <svg
             ref={bwSvgRef}
-            width={CHART_W}
+            width={BW_CHART_W}
             height={BW_H + AXIS_H}
             onMouseMove={handleBwMouseMove}
             onMouseLeave={() => setBwHover(null)}
@@ -776,13 +863,13 @@ export default function ProgressCharts({
                   min={bwMin}
                   max={bwMax}
                   step={Y_STEP}
-                  plotWidth={PLOT_W}
+                  plotWidth={BW_PLOT_W}
                   plotHeight={BW_H}
                 />
               )}
               {bwDomain && (
                 <path
-                  d={seriesToPath(bwSliced, bwDomain, PLOT_W, BW_H, 12, {
+                  d={seriesToPath(bwSliced, bwDomain, BW_PLOT_W, BW_H, 12, {
                     min: bwMin,
                     max: bwMax,
                   })}
@@ -797,8 +884,8 @@ export default function ProgressCharts({
                   opacity={LINE_OPACITY}
                 />
               )}
-              <WeekAxis domain={bwDomain} width={PLOT_W} plotHeight={BW_H} />
-              {bwHover && <HoverTooltip {...bwHover} plotWidth={PLOT_W} />}
+              <WeekAxis domain={bwDomain} width={BW_PLOT_W} plotHeight={BW_H} />
+              {bwHover && <HoverTooltip {...bwHover} plotWidth={BW_PLOT_W} />}
             </g>
           </svg>
         )}
