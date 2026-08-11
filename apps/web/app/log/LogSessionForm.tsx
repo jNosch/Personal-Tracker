@@ -63,10 +63,9 @@ function initialEntryState(exercises: ExerciseView[]): EntryState {
   return state;
 }
 
-// effectiveWeight/effectiveReps/loggedTotalReps now live in lib/logEntry.ts
-// (moved in code review — pure pre-fill/aggregation logic belongs there per
-// code-conventions.md's file-organization rule, and it gets the
-// testing.md-mandatory unit tests that way).
+// effectiveWeight/effectiveReps/loggedTotalReps: pure pre-fill/aggregation
+// logic, lives in lib/logEntry.ts (code-conventions.md's file-organization
+// rule), imported above.
 
 export default function LogSessionForm({
   programId,

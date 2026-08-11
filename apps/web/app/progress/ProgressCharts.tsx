@@ -282,6 +282,13 @@ const BODYWEIGHT_COLOR = "#db2777";
 // resolved spec number, an implementation judgement call — easy to retune
 // since it's named, not scattered as a bare literal.
 const HIGH_RPE_THRESHOLD = 9;
+// Shared "just a value, not a judgment" text color — BodyweightMultipleBadge
+// and RpeBox's non-high readings both want this same muted tone rather than
+// each hardcoding "#666" independently.
+const NEUTRAL_VALUE_COLOR = "#666";
+// RpeBox's own width cap — narrow enough to read as a sidebar next to the
+// exercise-overlay box, not so narrow that 3 date+value columns crowd.
+const RPE_BOX_MAX_W = 220;
 
 export interface ExerciseOption {
   id: string;
@@ -355,7 +362,7 @@ function BodyweightMultipleBadge({ value }: { value: number | null }) {
     );
   }
   return (
-    <span style={{ fontSize: 12, color: "#666", fontWeight: 600 }}>
+    <span style={{ fontSize: 12, color: NEUTRAL_VALUE_COLOR, fontWeight: 600 }}>
       {value.toFixed(1)}x BW
     </span>
   );
@@ -395,7 +402,7 @@ function RpeBox({
     <div
       style={{
         flex: "1 1 auto",
-        maxWidth: 220,
+        maxWidth: RPE_BOX_MAX_W,
         border: "1px solid #e5e5e5",
         borderRadius: 8,
         padding: 16,
@@ -436,21 +443,22 @@ function RpeBox({
                       style={{
                         fontSize: 12,
                         fontWeight: 600,
-                        // "#666" (matches BodyweightMultipleBadge's neutral
-                        // value color elsewhere in this file), not "#111"
-                        // — the page background here is actually
-                        // near-black (rgb(10,10,10), prefers-color-scheme
-                        // dark; see known-issues.md's "no design system
-                        // yet, isn't theme-aware" entry), so bare "#111"
-                        // text with no background of its own is nearly
-                        // invisible. Confirmed via getComputedStyle + a
-                        // real render, not just guessed — every other
-                        // "#111" in this file pairs it with an explicit
-                        // opaque background of its own (HoverTooltip's
-                        // fill, the active range-tab button), which this
-                        // bare text color didn't have.
+                        // NEUTRAL_VALUE_COLOR, not "#111" — the page
+                        // background here is actually near-black
+                        // (rgb(10,10,10), prefers-color-scheme dark; see
+                        // known-issues.md's "no design system yet, isn't
+                        // theme-aware" entry), so bare "#111" text with no
+                        // background of its own is nearly invisible.
+                        // Confirmed via getComputedStyle + a real render,
+                        // not just guessed — every other "#111" in this
+                        // file pairs it with an explicit opaque background
+                        // of its own (HoverTooltip's fill, the active
+                        // range-tab button), which this bare text color
+                        // didn't have.
                         color:
-                          r.avgRpe >= HIGH_RPE_THRESHOLD ? "#dc2626" : "#666",
+                          r.avgRpe >= HIGH_RPE_THRESHOLD
+                            ? "#dc2626"
+                            : NEUTRAL_VALUE_COLOR,
                       }}
                     >
                       {r.avgRpe.toFixed(1)}
