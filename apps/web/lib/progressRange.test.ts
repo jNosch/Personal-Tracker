@@ -152,6 +152,9 @@ describe("computeBodyweightMultiple", () => {
 });
 
 describe("recentExerciseRpeTrends", () => {
+  // Non-wave scheme throughout this block — exercises the original flat
+  // all-sets-that-session average (#56). Wave's signal-only aggregation
+  // (#60) gets its own describe block below.
   const readings: RpeReading[] = [
     // Squat: 4 separate sessions (06-01 has two sets logging RPE — should
     // collapse to one averaged point, not two).
@@ -160,35 +163,45 @@ describe("recentExerciseRpeTrends", () => {
       date: "2026-06-01",
       exerciseId: "squat",
       exerciseName: "Squat",
+      schemeType: "double_progression",
       rpe: 7,
+      countsTowardRpeSignal: false,
     },
     {
       sessionId: "s1",
       date: "2026-06-01",
       exerciseId: "squat",
       exerciseName: "Squat",
+      schemeType: "double_progression",
       rpe: 9,
+      countsTowardRpeSignal: false,
     },
     {
       sessionId: "s2",
       date: "2026-06-08",
       exerciseId: "squat",
       exerciseName: "Squat",
+      schemeType: "double_progression",
       rpe: 8,
+      countsTowardRpeSignal: false,
     },
     {
       sessionId: "s4",
       date: "2026-06-22",
       exerciseId: "squat",
       exerciseName: "Squat",
+      schemeType: "double_progression",
       rpe: 9.5,
+      countsTowardRpeSignal: false,
     },
     {
       sessionId: "s5",
       date: "2026-06-29",
       exerciseId: "squat",
       exerciseName: "Squat",
+      schemeType: "double_progression",
       rpe: 7,
+      countsTowardRpeSignal: false,
     },
     // Bench: only ever logged once — fewer readings than the limit.
     {
@@ -196,7 +209,9 @@ describe("recentExerciseRpeTrends", () => {
       date: "2026-06-01",
       exerciseId: "bench",
       exerciseName: "Bench",
+      schemeType: "double_progression",
       rpe: 6,
+      countsTowardRpeSignal: false,
     },
     // Deadlift: one session, two sets.
     {
@@ -204,14 +219,18 @@ describe("recentExerciseRpeTrends", () => {
       date: "2026-06-15",
       exerciseId: "deadlift",
       exerciseName: "Deadlift",
+      schemeType: "double_progression",
       rpe: 6,
+      countsTowardRpeSignal: false,
     },
     {
       sessionId: "s3",
       date: "2026-06-15",
       exerciseId: "deadlift",
       exerciseName: "Deadlift",
+      schemeType: "double_progression",
       rpe: 8,
+      countsTowardRpeSignal: false,
     },
   ];
 
@@ -279,14 +298,18 @@ describe("recentExerciseRpeTrends", () => {
         date: "2026-06-01",
         exerciseId: "squat",
         exerciseName: "Squat",
+        schemeType: "double_progression",
         rpe: 6,
+        countsTowardRpeSignal: false,
       },
       {
         sessionId: "b",
         date: "2026-06-01",
         exerciseId: "squat",
         exerciseName: "Squat",
+        schemeType: "double_progression",
         rpe: 10,
+        countsTowardRpeSignal: false,
       },
     ];
     const squat = recentExerciseRpeTrends(sameDay, 5).find(
@@ -294,6 +317,90 @@ describe("recentExerciseRpeTrends", () => {
     )!;
     expect(squat.readings).toHaveLength(2);
     expect(new Set(squat.readings.map((r) => r.sessionId)).size).toBe(2);
+  });
+});
+
+// #60: Wave rows read differently — "the set that counts" (AMRAP or
+// heaviest main set, stamped at log time as countsTowardRpeSignal), not a
+// flat average of every logged set. The describe block above already
+// covers every non-wave scheme's original behavior untouched.
+describe("recentExerciseRpeTrends: wave scheme", () => {
+  it("uses only the countsTowardRpeSignal-flagged reading, ignoring supplemental/other sets logged the same session", () => {
+    const readings: RpeReading[] = [
+      // Main AMRAP set, flagged — this is the one that should count.
+      {
+        sessionId: "s1",
+        date: "2026-06-01",
+        exerciseId: "squat",
+        exerciseName: "Squat",
+        schemeType: "wave",
+        rpe: 9,
+        countsTowardRpeSignal: true,
+      },
+      // A lighter BBB supplemental set logged the same session, unflagged
+      // — averaging this in would have pulled the old flat-average result
+      // well below 9.
+      {
+        sessionId: "s1",
+        date: "2026-06-01",
+        exerciseId: "squat",
+        exerciseName: "Squat",
+        schemeType: "wave",
+        rpe: 4,
+        countsTowardRpeSignal: false,
+      },
+    ];
+    const squat = recentExerciseRpeTrends(readings, 5).find(
+      (e) => e.exerciseId === "squat",
+    )!;
+    expect(squat.readings).toEqual([
+      { sessionId: "s1", date: "2026-06-01", avgRpe: 9 },
+    ]);
+  });
+
+  it("emits no point for a wave session with no flagged reading, rather than falling back to the flat average", () => {
+    const readings: RpeReading[] = [
+      {
+        sessionId: "s1",
+        date: "2026-06-01",
+        exerciseId: "squat",
+        exerciseName: "Squat",
+        schemeType: "wave",
+        rpe: 8,
+        countsTowardRpeSignal: false,
+      },
+    ];
+    const squat = recentExerciseRpeTrends(readings, 5).find(
+      (e) => e.exerciseId === "squat",
+    );
+    expect(squat).toBeUndefined();
+  });
+
+  it("averages multiple flagged readings within the same session, if there's ever more than one", () => {
+    const readings: RpeReading[] = [
+      {
+        sessionId: "s1",
+        date: "2026-06-01",
+        exerciseId: "squat",
+        exerciseName: "Squat",
+        schemeType: "wave",
+        rpe: 8,
+        countsTowardRpeSignal: true,
+      },
+      {
+        sessionId: "s1",
+        date: "2026-06-01",
+        exerciseId: "squat",
+        exerciseName: "Squat",
+        schemeType: "wave",
+        rpe: 10,
+        countsTowardRpeSignal: true,
+      },
+    ];
+    const squat = recentExerciseRpeTrends(readings, 5).find(
+      (e) => e.exerciseId === "squat",
+    )!;
+    expect(squat.readings[0]?.avgRpe).toBe(9);
   });
 });
 

@@ -5,7 +5,8 @@
 // programs.next_day_position, all in one transaction so a session is never
 // half-saved. setTrainingMax is Wave's manual-entry bootstrap (#16) —
 // trainingMaxKg has no other way to get its first value (see schemes.ts's
-// prescribe/update file-header note).
+// prescribe/update file-header note). acceptWaveRpeDeloadSuggestion is
+// #60's Log-page banner Accept action.
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "../../db/client";
@@ -25,6 +26,7 @@ import {
 } from "../../lib/oneRm";
 import { nextDayPosition } from "../../lib/rotation";
 import {
+  acceptRpeDeloadSuggestion,
   prescribe,
   roundToNearest,
   update,
@@ -77,6 +79,12 @@ export async function logSession(
         prescribedSets,
         repsBySetNumber,
       );
+      // #60: stamped statically by prescribe() (Wave's AMRAP-or-heaviest
+      // rule; always false for every other scheme) — no fallback resolution
+      // needed the way countsTowardOneRm's designations map above has one.
+      const rpeSignalBySetNumber = new Map(
+        prescribedSets.map((s) => [s.setNumber, s.countsTowardRpeSignal]),
+      );
 
       for (const set of exEntry.sets) {
         await tx.insert(loggedSets).values({
@@ -89,6 +97,8 @@ export async function logSession(
             set.actualWeightKg === null ? null : String(set.actualWeightKg),
           rpe: set.rpe === null ? null : String(set.rpe),
           countsTowardOneRm: designations.get(set.setNumber) ?? false,
+          countsTowardRpeSignal:
+            rpeSignalBySetNumber.get(set.setNumber) ?? false,
           isDone: set.isDone,
         });
       }
@@ -97,6 +107,7 @@ export async function logSession(
         setNumber: s.setNumber,
         repsAchieved: s.repsAchieved,
         actualWeightKg: s.actualWeightKg,
+        rpe: s.rpe,
       }));
       const newState = update(scheme, row.schemeState, loggedInputs);
       await tx
@@ -196,10 +207,34 @@ export async function setTrainingMax(exerciseInDayId: string, oneRmKg: number) {
     trainingMaxKg,
     weekIndex: prevState.weekIndex ?? 0,
     inDeload: prevState.inDeload ?? false,
+    redStreak: prevState.redStreak ?? 0,
   };
   await db
     .update(exerciseInDay)
     .set({ schemeState: newState })
+    .where(eq(exerciseInDay.id, exerciseInDayId));
+  revalidatePath("/log");
+}
+
+// #60: the Log page banner's Accept button. Re-reads current state rather
+// than trusting whatever the page rendered — the streak could have broken
+// (or the exercise could already be mid-deload) between page load and
+// click, e.g. two tabs open. Silently no-ops when the suggestion is no
+// longer live rather than erroring; the page just re-renders without the
+// banner on refresh either way.
+export async function acceptWaveRpeDeloadSuggestion(exerciseInDayId: string) {
+  const row = await db.query.exerciseInDay.findFirst({
+    where: eq(exerciseInDay.id, exerciseInDayId),
+  });
+  if (!row || row.schemeType !== "wave") return;
+
+  const state = row.schemeState as WaveState;
+  const eligible = (state.redStreak ?? 0) >= 3 && !state.inDeload;
+  if (!eligible) return;
+
+  await db
+    .update(exerciseInDay)
+    .set({ schemeState: acceptRpeDeloadSuggestion(state) })
     .where(eq(exerciseInDay.id, exerciseInDayId));
   revalidatePath("/log");
 }

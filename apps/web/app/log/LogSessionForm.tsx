@@ -15,7 +15,11 @@ import {
   loggedTotalReps,
 } from "../../lib/logEntry";
 import type { PrescribedSet } from "../../lib/schemes";
-import { logSession, setTrainingMax } from "./actions";
+import {
+  acceptWaveRpeDeloadSuggestion,
+  logSession,
+  setTrainingMax,
+} from "./actions";
 
 interface ExerciseView {
   exerciseInDayId: string;
@@ -27,6 +31,11 @@ interface ExerciseView {
   // every other scheme) — the per-set label alone ("weight×—") doesn't say
   // what that total actually is.
   repAccumulationTargetTotalReps?: number;
+  // #60: 3+ consecutive red weeks on this Wave exercise's own signal set —
+  // an offer, not a command. needsTrainingMax always wins when both are
+  // somehow true (can't happen in practice: redStreak only climbs once
+  // sessions have already been logged against a real training max).
+  suggestDeload: boolean;
 }
 
 interface SetEntryState {
@@ -193,6 +202,13 @@ export default function LogSessionForm({
           />
         ) : (
           <div key={ex.exerciseInDayId} style={{ marginBottom: 26 }}>
+            {ex.suggestDeload && (
+              <RpeDeloadBanner
+                exerciseInDayId={ex.exerciseInDayId}
+                exerciseName={ex.exerciseName}
+                onAccept={() => router.refresh()}
+              />
+            )}
             <div
               style={{
                 display: "flex",
@@ -384,6 +400,65 @@ function TrainingMaxPrompt({
         }}
       >
         set
+      </button>
+    </div>
+  );
+}
+
+// #60: 3+ consecutive red (RPE >= 9 on the AMRAP-or-heaviest set) weeks on
+// this Wave exercise — a suggestion, not an automatic deload. Sits above
+// the exercise's normal sets rather than replacing them: declining costs
+// nothing, the cycle just continues as prescribed below. Accept flips
+// inDeload server-side (acceptWaveRpeDeloadSuggestion) so the *next*
+// prescribe() for this exercise returns the deload week — this session's
+// already-rendered sets are unaffected either way.
+function RpeDeloadBanner({
+  exerciseInDayId,
+  exerciseName,
+  onAccept,
+}: {
+  exerciseInDayId: string;
+  exerciseName: string;
+  onAccept: () => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+
+  return (
+    <div
+      style={{
+        marginBottom: 10,
+        border: "1px dashed #dc2626",
+        borderRadius: 4,
+        padding: 14,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+      }}
+    >
+      <span style={{ fontSize: 16 }}>
+        <strong>{exerciseName}</strong> — 3 weeks of high RPE. Deload next?
+      </span>
+      <button
+        disabled={isPending}
+        onClick={() =>
+          startTransition(async () => {
+            await acceptWaveRpeDeloadSuggestion(exerciseInDayId);
+            onAccept();
+          })
+        }
+        style={{
+          padding: "5px 14px",
+          fontSize: 17,
+          background: "#dc2626",
+          color: "#fff",
+          border: "none",
+          fontFamily: "monospace",
+          cursor: "pointer",
+          flexShrink: 0,
+        }}
+      >
+        deload next
       </button>
     </div>
   );

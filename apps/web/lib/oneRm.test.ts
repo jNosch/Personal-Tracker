@@ -14,12 +14,14 @@ describe("resolveCountsTowardOneRm", () => {
         prescribedWeightKg: 100,
         repTarget: 5,
         countsTowardOneRm: true,
+        countsTowardRpeSignal: false,
       },
       {
         setNumber: 2,
         prescribedWeightKg: 80,
         repTarget: 5,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
     ];
     // Even though set 2's logged reps would qualify under the fallback,
@@ -43,12 +45,14 @@ describe("resolveCountsTowardOneRm", () => {
         prescribedWeightKg: 60,
         repTarget: 8,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
       {
         setNumber: 2,
         prescribedWeightKg: 60,
         repTarget: 8,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
     ];
     const reps = new Map([
@@ -70,6 +74,7 @@ describe("resolveCountsTowardOneRm", () => {
         prescribedWeightKg: 60,
         repTarget: 8,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
     ];
     expect(resolveCountsTowardOneRm(prescribed, new Map())).toEqual(
