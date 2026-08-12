@@ -36,11 +36,39 @@ export function dateToX(
   return padding + frac * (width - padding * 2);
 }
 
-// x-pixel for the point at `index` within `series`. Same-day fallback
-// (#31): a zero-span domain can't distinguish more than one session logged
-// the same calendar day, so it spaces points evenly by position instead of
-// collapsing them onto one x. Shared by seriesToPath and nearestHoverPoint
-// so hovering always lines up with what's actually drawn, fallback or not.
+// Fixed px offset between same-date points within a cluster (#46) —
+// deliberately simple/fixed, not derived from chart width, same philosophy
+// as thinTicks/gridlineValues' own step sizing in this file.
+const SAME_DATE_JITTER_PX = 5;
+
+// x-pixel for the point at `index` within `series`. Two independent
+// same-day fallbacks, each scoped to the case it actually handles — kept
+// separate rather than unified into one mechanism (#46's resolved spec):
+//
+// 1. Whole-domain single-day fallback (#31): when the *combined* domain
+//    (every currently-toggled series) has zero span, real calendar math
+//    has nothing to distinguish points by, so this spaces them evenly by
+//    position instead of collapsing them onto one x. Already correct as
+//    of #31 for its own case (nothing else toggled, or everything toggled
+//    shares one date) — left untouched here rather than folded into #2
+//    below, which would visually regress it (dateToX's own zero-span
+//    fallback pins to the left edge, not spread across the width).
+// 2. Same-date cluster fallback (#46): even when the domain has real span,
+//    two or more points *within one series* can still share an identical
+//    date (a real same-day double session, or — the reported repro — bad
+//    seed data with several same-day estimates). Plain dateToX would still
+//    collapse those onto one x, connected by a vertical stroke through an
+//    otherwise-normal line. Detected fresh per call (series here are
+//    always a personal tracker's own small logged history, so the O(n)
+//    scan costs nothing measurable) rather than precomputed once per
+//    series, to avoid a second data structure the caller has to keep in
+//    sync with `series`. Jittered by a small fixed step around the true
+//    x — not spread across the width like #1 — so it stays honest about
+//    when the points actually happened, rather than fabricating a time
+//    spread that didn't occur.
+//
+// Shared by seriesToPath and nearestHoverPoint so hovering always lines up
+// with what's actually drawn, either fallback or neither.
 function xForPoint(
   series: SeriesPoint[],
   index: number,
@@ -52,7 +80,15 @@ function xForPoint(
     const stepX = (width - padding * 2) / (series.length - 1 || 1);
     return padding + index * stepX;
   }
-  return dateToX(series[index]!.date, domain, width, padding);
+  const baseX = dateToX(series[index]!.date, domain, width, padding);
+  const clusterIndices = series
+    .map((p, i) => (p.date === series[index]!.date ? i : -1))
+    .filter((i) => i !== -1);
+  if (clusterIndices.length < 2) return baseX;
+  const positionInCluster = clusterIndices.indexOf(index);
+  const offset =
+    (positionInCluster - (clusterIndices.length - 1) / 2) * SAME_DATE_JITTER_PX;
+  return baseX + offset;
 }
 
 // y-pixel for a data value within [min, max]. Extracted so seriesToPath,
