@@ -61,6 +61,33 @@ describe("seriesToPath", () => {
     // all collapsed onto x=10.
     expect(d).toBe("M 10.0,90.0 L 50.0,50.0 L 90.0,10.0");
   });
+
+  it("#46: jitters a same-date cluster within an otherwise real-span domain, rather than collapsing it onto one vertical x", () => {
+    // Domain has real span (Aug 1 - Aug 31), but two of the three points
+    // share 2026-08-16 (the domain's exact midpoint, per dateToX's own
+    // test above) — the case #46's whole-domain fallback doesn't (and
+    // shouldn't) catch, since the domain itself isn't single-day.
+    const series: SeriesPoint[] = [
+      { date: "2026-08-01", value: 0 },
+      { date: "2026-08-16", value: 5 },
+      { date: "2026-08-16", value: 10 },
+    ];
+    const d = seriesToPath(series, domain, 100, 100, 10, { min: 0, max: 10 });
+    // Real x for 08-16 = 50. The two same-date points jitter +/-2.5px
+    // around it (centered, 5px step) instead of both landing on exactly
+    // x=50.
+    expect(d).toBe("M 10.0,90.0 L 47.5,50.0 L 52.5,10.0");
+  });
+
+  it("#46: a lone point sharing no date with anything else in its series is unaffected by the cluster fallback", () => {
+    const series: SeriesPoint[] = [
+      { date: "2026-08-01", value: 0 },
+      { date: "2026-08-16", value: 5 },
+      { date: "2026-08-31", value: 10 },
+    ];
+    const d = seriesToPath(series, domain, 100, 100, 10, { min: 0, max: 10 });
+    expect(d).toBe("M 10.0,90.0 L 50.0,50.0 L 90.0,10.0");
+  });
 });
 
 describe("combinedDomain", () => {
@@ -251,5 +278,29 @@ describe("nearestHoverPoint", () => {
       85, // near the bottom, close to seriesA's y=90
     );
     expect(result?.seriesIndex).toBe(0);
+  });
+
+  it("#46: hover position reflects the same-date jitter, so the tooltip lines up with what's actually drawn", () => {
+    const clustered: SeriesPoint[] = [
+      { date: "2026-08-01", value: 0 },
+      { date: "2026-08-08", value: 5 },
+      { date: "2026-08-08", value: 10 },
+    ];
+    // 2026-08-08 in twoWeekDomain (Aug 1 - Aug 15) -> real x = 10 + 7/14 *
+    // 80 = 50; the two Aug-8 points jitter to 47.5/52.5 (same math as
+    // seriesToPath's cluster test above). Hovering right at 52.5 should
+    // land on the second (higher-value) point, not the first.
+    const result = nearestHoverPoint(
+      [clustered],
+      twoWeekDomain,
+      { min: 0, max: 10 },
+      100,
+      100,
+      10,
+      52.5,
+      10, // value 10 -> y=10 (top)
+    );
+    expect(result?.point).toEqual(clustered[2]);
+    expect(result?.x).toBeCloseTo(52.5, 1);
   });
 });
