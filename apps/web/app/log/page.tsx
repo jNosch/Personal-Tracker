@@ -57,15 +57,25 @@ export default async function LogPage() {
       config: ex.schemeConfig,
     } as SchemeConfig;
     const sets = prescribe(scheme, ex.schemeState);
+    const waveState =
+      scheme.type === "wave" ? (ex.schemeState as WaveState) : undefined;
     const needsTrainingMax =
+      scheme.type === "wave" && waveState!.trainingMaxKg == null;
+    // #60: the Log page banner's eligibility check — same rule
+    // acceptWaveRpeDeloadSuggestion re-verifies server-side before actually
+    // accepting, so a stale render here can only under- or over-show the
+    // banner for one page load, never mis-write state.
+    const suggestDeload =
       scheme.type === "wave" &&
-      (ex.schemeState as WaveState).trainingMaxKg == null;
+      !waveState!.inDeload &&
+      (waveState!.redStreak ?? 0) >= 3;
     return {
       exerciseInDayId: ex.id,
       exerciseName: ex.exercise.name,
       schemeType: ex.schemeType,
       sets,
       needsTrainingMax,
+      suggestDeload,
       // #57: Rep Accumulation's per-set label already shows "weight×—" (no
       // per-set target, the target is a whole-session total, #55) — without
       // this, there's nothing on screen telling you what that total

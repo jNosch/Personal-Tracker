@@ -391,6 +391,9 @@ async function main() {
             setNumber: set.setNumber,
             repsAchieved: reps,
             actualWeightKg: set.prescribedWeightKg,
+            // Demo data never simulates RPE — #60's redStreak/signal
+            // machinery is a no-op against seeded sessions either way.
+            rpe: null,
           });
         }
         const designations = resolveCountsTowardOneRm(
@@ -411,6 +414,7 @@ async function main() {
                 ? null
                 : String(set.prescribedWeightKg),
             countsTowardOneRm: designations.get(set.setNumber) ?? false,
+            countsTowardRpeSignal: set.countsTowardRpeSignal,
             isDone: true,
           });
         }

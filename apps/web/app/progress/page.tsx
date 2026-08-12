@@ -15,6 +15,7 @@ import {
   recentExerciseRpeTrends,
   type SeriesPoint,
 } from "../../lib/progressRange";
+import type { WaveState } from "../../lib/schemes";
 
 // #56: how many of its own most recent RPE-logged sessions the recent-RPE
 // box shows per exercise (not "last N sessions of the program" — see
@@ -114,10 +115,11 @@ export default async function ProgressPage() {
   // specifically (same scoping principle as #31's original active-program
   // default), not global history. Every set that logged an RPE, across
   // every exercise/day of the active program, joined to exercises for the
-  // name; recentExerciseRpeTrends (lib/) does the per-session averaging and
-  // picks each exercise's own most recent RECENT_RPE_READINGS_PER_EXERCISE
-  // readings (#56 follow-up: grouped by exercise, not by session — see
-  // that function's own comment).
+  // name and exerciseInDay for the scheme type + #60's signal flag;
+  // recentExerciseRpeTrends (lib/) does the per-session aggregation
+  // (Wave-aware since #60) and picks each exercise's own most recent
+  // RECENT_RPE_READINGS_PER_EXERCISE readings (#56 follow-up: grouped by
+  // exercise, not by session — see that function's own comment).
   const recentRpe = activeProgram
     ? recentExerciseRpeTrends(
         (
@@ -127,7 +129,9 @@ export default async function ProgressPage() {
               date: sessions.sessionDate,
               exerciseId: loggedSets.exerciseId,
               exerciseName: exercises.name,
+              schemeType: exerciseInDay.schemeType,
               rpe: loggedSets.rpe,
+              countsTowardRpeSignal: loggedSets.countsTowardRpeSignal,
             })
             .from(loggedSets)
             .innerJoin(sessions, eq(loggedSets.sessionId, sessions.id))
@@ -136,6 +140,10 @@ export default async function ProgressPage() {
               eq(sessions.dayTemplateId, dayTemplates.id),
             )
             .innerJoin(exercises, eq(loggedSets.exerciseId, exercises.id))
+            .innerJoin(
+              exerciseInDay,
+              eq(loggedSets.exerciseInDayId, exerciseInDay.id),
+            )
             .where(
               and(
                 eq(dayTemplates.programId, activeProgram.id),
@@ -147,10 +155,28 @@ export default async function ProgressPage() {
           date: r.date,
           exerciseId: r.exerciseId,
           exerciseName: r.exerciseName,
+          schemeType: r.schemeType,
           rpe: Number(r.rpe),
+          countsTowardRpeSignal: r.countsTowardRpeSignal,
         })),
         RECENT_RPE_READINGS_PER_EXERCISE,
       )
+    : [];
+
+  // #60: small passive flag on RpeBox's Wave rows — same redStreak >= 3 &&
+  // !inDeload eligibility the Log page banner uses, just read-only here
+  // (the Accept button lives only on the Log page, see that ticket's
+  // resolved spec). Scoped to the active program's own exercises, matching
+  // recentRpe's scoping above.
+  const suggestDeloadExerciseIds = activeProgram
+    ? activeProgram.dayTemplates
+        .flatMap((d) => d.exercises)
+        .filter((ex) => {
+          if (ex.schemeType !== "wave") return false;
+          const state = ex.schemeState as WaveState;
+          return (state.redStreak ?? 0) >= 3 && !state.inDeload;
+        })
+        .map((ex) => ex.exerciseId)
     : [];
 
   return (
@@ -161,6 +187,7 @@ export default async function ProgressPage() {
       bodyweightSeries={bodyweightSeries}
       hasActiveProgram={activeProgram !== undefined}
       recentRpe={recentRpe}
+      suggestDeloadExerciseIds={suggestDeloadExerciseIds}
     />
   );
 }

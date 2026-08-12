@@ -14,7 +14,17 @@
 // ADR-0001. That's also why exercise_in_day_id below is NOT NULL: the row a
 // logged set points at always still exists, archived or not.
 
-import { pgTable, uuid, text, boolean, integer, date, numeric, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  uuid,
+  text,
+  boolean,
+  integer,
+  date,
+  numeric,
+  jsonb,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 
 export const exercises = pgTable("exercises", {
@@ -43,7 +53,9 @@ export const programs = pgTable(
   (t) => [
     // Enforces "exactly one active program" at the DB level, not just in
     // application code — a partial unique index on is_active = true.
-    uniqueIndex("one_active_program").on(t.isActive).where(sql`${t.isActive} = true`),
+    uniqueIndex("one_active_program")
+      .on(t.isActive)
+      .where(sql`${t.isActive} = true`),
   ],
 );
 
@@ -58,7 +70,12 @@ export const dayTemplates = pgTable(
     position: integer("position").notNull(),
     isArchived: boolean("is_archived").notNull().default(false),
   },
-  (t) => [uniqueIndex("day_template_position_per_program").on(t.programId, t.position)],
+  (t) => [
+    uniqueIndex("day_template_position_per_program").on(
+      t.programId,
+      t.position,
+    ),
+  ],
 );
 
 // The known scheme types, kept in sync with the four scheme-math tickets
@@ -90,7 +107,12 @@ export const exerciseInDay = pgTable(
     schemeState: jsonb("scheme_state").notNull(),
     isArchived: boolean("is_archived").notNull().default(false),
   },
-  (t) => [uniqueIndex("exercise_position_per_day_template").on(t.dayTemplateId, t.position)],
+  (t) => [
+    uniqueIndex("exercise_position_per_day_template").on(
+      t.dayTemplateId,
+      t.position,
+    ),
+  ],
 );
 
 export const sessions = pgTable("sessions", {
@@ -125,10 +147,23 @@ export const loggedSets = pgTable(
     // Stamped at log time from whatever the scheme designated that session
     // (AMRAP set, top set, or the reps-≤10 fallback) — never re-derived later.
     countsTowardOneRm: boolean("counts_toward_1rm").notNull().default(false),
+    // Stamped at log time from PrescribedSet.countsTowardRpeSignal (#60) —
+    // Wave's AMRAP set that week, else its heaviest main set. Drives both
+    // RpeBox's Wave-row display and Wave's redStreak deload trigger. false
+    // by default for every pre-#60 row and every non-Wave scheme.
+    countsTowardRpeSignal: boolean("counts_toward_rpe_signal")
+      .notNull()
+      .default(false),
     // The only signal a Failure Sets set carries.
     isDone: boolean("is_done").notNull().default(true),
   },
-  (t) => [uniqueIndex("set_number_per_session_exercise").on(t.sessionId, t.exerciseId, t.setNumber)],
+  (t) => [
+    uniqueIndex("set_number_per_session_exercise").on(
+      t.sessionId,
+      t.exerciseId,
+      t.setNumber,
+    ),
+  ],
 );
 
 export const oneRmEstimates = pgTable(
@@ -144,9 +179,17 @@ export const oneRmEstimates = pgTable(
     // The highest estimate among that session's qualifying sets for this
     // exercise, computed once at session-save time — one row per
     // (exercise, session), not one row per qualifying set.
-    estimatedOneRmKg: numeric("estimated_1rm_kg", { precision: 6, scale: 2 }).notNull(),
+    estimatedOneRmKg: numeric("estimated_1rm_kg", {
+      precision: 6,
+      scale: 2,
+    }).notNull(),
   },
-  (t) => [uniqueIndex("one_estimate_per_exercise_session").on(t.exerciseId, t.sessionId)],
+  (t) => [
+    uniqueIndex("one_estimate_per_exercise_session").on(
+      t.exerciseId,
+      t.sessionId,
+    ),
+  ],
 );
 
 export const bodyweightEntries = pgTable("bodyweight_entries", {
@@ -161,11 +204,17 @@ export const programsRelations = relations(programs, ({ many }) => ({
   dayTemplates: many(dayTemplates),
 }));
 
-export const dayTemplatesRelations = relations(dayTemplates, ({ one, many }) => ({
-  program: one(programs, { fields: [dayTemplates.programId], references: [programs.id] }),
-  exercises: many(exerciseInDay),
-  sessions: many(sessions),
-}));
+export const dayTemplatesRelations = relations(
+  dayTemplates,
+  ({ one, many }) => ({
+    program: one(programs, {
+      fields: [dayTemplates.programId],
+      references: [programs.id],
+    }),
+    exercises: many(exerciseInDay),
+    sessions: many(sessions),
+  }),
+);
 
 export const exercisesRelations = relations(exercises, ({ many }) => ({
   exerciseInDay: many(exerciseInDay),
@@ -173,25 +222,52 @@ export const exercisesRelations = relations(exercises, ({ many }) => ({
   oneRmEstimates: many(oneRmEstimates),
 }));
 
-export const exerciseInDayRelations = relations(exerciseInDay, ({ one, many }) => ({
-  dayTemplate: one(dayTemplates, { fields: [exerciseInDay.dayTemplateId], references: [dayTemplates.id] }),
-  exercise: one(exercises, { fields: [exerciseInDay.exerciseId], references: [exercises.id] }),
-  loggedSets: many(loggedSets),
-}));
+export const exerciseInDayRelations = relations(
+  exerciseInDay,
+  ({ one, many }) => ({
+    dayTemplate: one(dayTemplates, {
+      fields: [exerciseInDay.dayTemplateId],
+      references: [dayTemplates.id],
+    }),
+    exercise: one(exercises, {
+      fields: [exerciseInDay.exerciseId],
+      references: [exercises.id],
+    }),
+    loggedSets: many(loggedSets),
+  }),
+);
 
 export const sessionsRelations = relations(sessions, ({ one, many }) => ({
-  dayTemplate: one(dayTemplates, { fields: [sessions.dayTemplateId], references: [dayTemplates.id] }),
+  dayTemplate: one(dayTemplates, {
+    fields: [sessions.dayTemplateId],
+    references: [dayTemplates.id],
+  }),
   loggedSets: many(loggedSets),
   oneRmEstimates: many(oneRmEstimates),
 }));
 
 export const loggedSetsRelations = relations(loggedSets, ({ one }) => ({
-  session: one(sessions, { fields: [loggedSets.sessionId], references: [sessions.id] }),
-  exercise: one(exercises, { fields: [loggedSets.exerciseId], references: [exercises.id] }),
-  exerciseInDay: one(exerciseInDay, { fields: [loggedSets.exerciseInDayId], references: [exerciseInDay.id] }),
+  session: one(sessions, {
+    fields: [loggedSets.sessionId],
+    references: [sessions.id],
+  }),
+  exercise: one(exercises, {
+    fields: [loggedSets.exerciseId],
+    references: [exercises.id],
+  }),
+  exerciseInDay: one(exerciseInDay, {
+    fields: [loggedSets.exerciseInDayId],
+    references: [exerciseInDay.id],
+  }),
 }));
 
 export const oneRmEstimatesRelations = relations(oneRmEstimates, ({ one }) => ({
-  exercise: one(exercises, { fields: [oneRmEstimates.exerciseId], references: [exercises.id] }),
-  session: one(sessions, { fields: [oneRmEstimates.sessionId], references: [sessions.id] }),
+  exercise: one(exercises, {
+    fields: [oneRmEstimates.exerciseId],
+    references: [exercises.id],
+  }),
+  session: one(sessions, {
+    fields: [oneRmEstimates.sessionId],
+    references: [sessions.id],
+  }),
 }));

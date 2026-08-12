@@ -4,8 +4,10 @@
 // what makes that guarantee real at the call sites in app/programs/actions.ts.
 import { describe, expect, it } from "vitest";
 import {
+  acceptRpeDeloadSuggestion,
   defaultConfigFor,
   epley1Rm,
+  pickWaveSignalSetNumber,
   PRESET_5_3_1_WEEK_TABLE,
   prescribe,
   SCHEME_CATALOG,
@@ -117,25 +119,28 @@ describe("prescribe/update: double_progression", () => {
         prescribedWeightKg: 0,
         repTarget: 8,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
       {
         setNumber: 2,
         prescribedWeightKg: 0,
         repTarget: 8,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
       {
         setNumber: 3,
         prescribedWeightKg: 0,
         repTarget: 8,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
     ]);
   });
 
   it("bootstraps state.currentWeightKg from the first logged session's actual weight", () => {
     const sets: LoggedSetInput[] = [
-      { setNumber: 1, repsAchieved: 5, actualWeightKg: 60 },
+      { setNumber: 1, repsAchieved: 5, actualWeightKg: 60, rpe: null },
     ];
     expect(update(scheme, {}, sets)).toEqual({
       currentWeightKg: 60,
@@ -146,9 +151,9 @@ describe("prescribe/update: double_progression", () => {
   it("climbs the rep target by 1 when every set hits it, below the range top", () => {
     const state = { currentWeightKg: 60, currentRepTarget: 8 };
     const sets: LoggedSetInput[] = [
-      { setNumber: 1, repsAchieved: 8, actualWeightKg: 60 },
-      { setNumber: 2, repsAchieved: 9, actualWeightKg: 60 },
-      { setNumber: 3, repsAchieved: 8, actualWeightKg: 60 },
+      { setNumber: 1, repsAchieved: 8, actualWeightKg: 60, rpe: null },
+      { setNumber: 2, repsAchieved: 9, actualWeightKg: 60, rpe: null },
+      { setNumber: 3, repsAchieved: 8, actualWeightKg: 60, rpe: null },
     ];
     expect(update(scheme, state, sets)).toEqual({
       currentWeightKg: 60,
@@ -159,9 +164,9 @@ describe("prescribe/update: double_progression", () => {
   it("bumps weight and resets target to the range low when hitting target at the range top", () => {
     const state = { currentWeightKg: 60, currentRepTarget: 12 };
     const sets: LoggedSetInput[] = [
-      { setNumber: 1, repsAchieved: 12, actualWeightKg: 60 },
-      { setNumber: 2, repsAchieved: 12, actualWeightKg: 60 },
-      { setNumber: 3, repsAchieved: 13, actualWeightKg: 60 },
+      { setNumber: 1, repsAchieved: 12, actualWeightKg: 60, rpe: null },
+      { setNumber: 2, repsAchieved: 12, actualWeightKg: 60, rpe: null },
+      { setNumber: 3, repsAchieved: 13, actualWeightKg: 60, rpe: null },
     ];
     expect(update(scheme, state, sets)).toEqual({
       currentWeightKg: 62.5,
@@ -172,9 +177,9 @@ describe("prescribe/update: double_progression", () => {
   it("makes no change when any set falls short", () => {
     const state = { currentWeightKg: 60, currentRepTarget: 8 };
     const sets: LoggedSetInput[] = [
-      { setNumber: 1, repsAchieved: 8, actualWeightKg: 60 },
-      { setNumber: 2, repsAchieved: 7, actualWeightKg: 60 },
-      { setNumber: 3, repsAchieved: 8, actualWeightKg: 60 },
+      { setNumber: 1, repsAchieved: 8, actualWeightKg: 60, rpe: null },
+      { setNumber: 2, repsAchieved: 7, actualWeightKg: 60, rpe: null },
+      { setNumber: 3, repsAchieved: 8, actualWeightKg: 60, rpe: null },
     ];
     expect(update(scheme, state, sets)).toEqual(state);
   });
@@ -201,6 +206,7 @@ describe("prescribe/update: rep_accumulation", () => {
       setNumber: i + 1,
       repsAchieved: reps,
       actualWeightKg: 40,
+      rpe: null,
     }));
     expect(update(scheme, { currentWeightKg: 40 }, sets)).toEqual({
       currentWeightKg: 42.5,
@@ -212,6 +218,7 @@ describe("prescribe/update: rep_accumulation", () => {
       setNumber: i + 1,
       repsAchieved: reps,
       actualWeightKg: 40,
+      rpe: null,
     }));
     expect(update(scheme, { currentWeightKg: 40 }, sets)).toEqual({
       currentWeightKg: 40,
@@ -241,18 +248,21 @@ describe("prescribe/update: topset_backoff", () => {
         prescribedWeightKg: 100,
         repTarget: 1,
         countsTowardOneRm: true,
+        countsTowardRpeSignal: false,
       },
       {
         setNumber: 2,
         prescribedWeightKg: 80,
         repTarget: 5,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
       {
         setNumber: 3,
         prescribedWeightKg: 80,
         repTarget: 5,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
     ]);
   });
@@ -260,8 +270,8 @@ describe("prescribe/update: topset_backoff", () => {
   it("climbs the top set's target, ignoring back-off performance entirely", () => {
     const state = { currentWeightKg: 100, currentRepTarget: 1 };
     const sets: LoggedSetInput[] = [
-      { setNumber: 1, repsAchieved: 1, actualWeightKg: 100 },
-      { setNumber: 2, repsAchieved: 0, actualWeightKg: 80 },
+      { setNumber: 1, repsAchieved: 1, actualWeightKg: 100, rpe: null },
+      { setNumber: 2, repsAchieved: 0, actualWeightKg: 80, rpe: null },
     ];
     expect(update(scheme, state, sets)).toEqual({
       currentWeightKg: 100,
@@ -272,7 +282,7 @@ describe("prescribe/update: topset_backoff", () => {
   it("bumps weight and resets target when the top set hits target at the range top", () => {
     const state = { currentWeightKg: 100, currentRepTarget: 3 };
     const sets: LoggedSetInput[] = [
-      { setNumber: 1, repsAchieved: 3, actualWeightKg: 100 },
+      { setNumber: 1, repsAchieved: 3, actualWeightKg: 100, rpe: null },
     ];
     expect(update(scheme, state, sets)).toEqual({
       currentWeightKg: 102.5,
@@ -293,18 +303,21 @@ describe("prescribe/update: failure_sets", () => {
         prescribedWeightKg: null,
         repTarget: null,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
       {
         setNumber: 2,
         prescribedWeightKg: null,
         repTarget: null,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
       {
         setNumber: 3,
         prescribedWeightKg: null,
         repTarget: null,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
     ]);
   });
@@ -332,23 +345,29 @@ describe("prescribe/update: wave", () => {
         prescribedWeightKg: 65,
         repTarget: 5,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
       {
         setNumber: 2,
         prescribedWeightKg: 75,
         repTarget: 5,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
       {
         setNumber: 3,
         prescribedWeightKg: 85,
         repTarget: "AMRAP",
         countsTowardOneRm: true,
+        // #60: the AMRAP set is also the RPE signal set — same set both
+        // flags land on here, though the two flags aren't the same concept
+        // (see PrescribedSet's own doc comment on countsTowardRpeSignal).
+        countsTowardRpeSignal: true,
       },
     ]);
   });
 
-  it("appends BBB supplemental sets at 50% of training max after the main sets", () => {
+  it("appends BBB supplemental sets at 50% of training max after the main sets, never flagged as the RPE signal", () => {
     const bbbScheme = {
       type: "wave" as const,
       config: { ...config, supplementalSetType: "bbb" as const },
@@ -361,29 +380,31 @@ describe("prescribe/update: wave", () => {
         prescribedWeightKg: 50,
         repTarget: 10,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       })),
     );
   });
 
   it("advances weekIndex without recalculating training max mid-cycle", () => {
     const sets: LoggedSetInput[] = [
-      { setNumber: 1, repsAchieved: 5, actualWeightKg: 65 },
-      { setNumber: 2, repsAchieved: 5, actualWeightKg: 75 },
-      { setNumber: 3, repsAchieved: 8, actualWeightKg: 85 },
+      { setNumber: 1, repsAchieved: 5, actualWeightKg: 65, rpe: null },
+      { setNumber: 2, repsAchieved: 5, actualWeightKg: 75, rpe: null },
+      { setNumber: 3, repsAchieved: 8, actualWeightKg: 85, rpe: 7 },
     ];
     expect(update(scheme, { trainingMaxKg: 100, weekIndex: 0 }, sets)).toEqual({
       trainingMaxKg: 100,
       weekIndex: 1,
       inDeload: false,
+      redStreak: 0,
     });
   });
 
   it("recalculates training max from week 3's AMRAP set and rolls into next cycle when not deloading", () => {
     const neverDeload: WaveConfig = { ...config, deloadMode: "never" };
     const sets: LoggedSetInput[] = [
-      { setNumber: 1, repsAchieved: 5, actualWeightKg: 75 },
-      { setNumber: 2, repsAchieved: 3, actualWeightKg: 85 },
-      { setNumber: 3, repsAchieved: 5, actualWeightKg: 95 },
+      { setNumber: 1, repsAchieved: 5, actualWeightKg: 75, rpe: null },
+      { setNumber: 2, repsAchieved: 3, actualWeightKg: 85, rpe: null },
+      { setNumber: 3, repsAchieved: 5, actualWeightKg: 95, rpe: 7 },
     ];
     const result = update(
       { type: "wave" as const, config: neverDeload },
@@ -395,15 +416,16 @@ describe("prescribe/update: wave", () => {
       trainingMaxKg: 100,
       weekIndex: 0,
       inDeload: false,
+      redStreak: 0,
     });
   });
 
   it("enters deload when deloadMode is 'always', regardless of performance", () => {
     const alwaysDeload: WaveConfig = { ...config, deloadMode: "always" };
     const sets: LoggedSetInput[] = [
-      { setNumber: 1, repsAchieved: 5, actualWeightKg: 75 },
-      { setNumber: 2, repsAchieved: 3, actualWeightKg: 85 },
-      { setNumber: 3, repsAchieved: 5, actualWeightKg: 95 },
+      { setNumber: 1, repsAchieved: 5, actualWeightKg: 75, rpe: null },
+      { setNumber: 2, repsAchieved: 3, actualWeightKg: 85, rpe: null },
+      { setNumber: 3, repsAchieved: 5, actualWeightKg: 95, rpe: null },
     ];
     const result = update(
       { type: "wave" as const, config: alwaysDeload },
@@ -415,10 +437,10 @@ describe("prescribe/update: wave", () => {
 
   it("enters deload on 'on_regression' only when the recalculated TM is strictly lower", () => {
     const sets: LoggedSetInput[] = [
-      { setNumber: 1, repsAchieved: 5, actualWeightKg: 75 },
-      { setNumber: 2, repsAchieved: 3, actualWeightKg: 85 },
+      { setNumber: 1, repsAchieved: 5, actualWeightKg: 75, rpe: null },
+      { setNumber: 2, repsAchieved: 3, actualWeightKg: 85, rpe: null },
       // A weak AMRAP set that produces a lower estimate than the current TM.
-      { setNumber: 3, repsAchieved: 1, actualWeightKg: 90 },
+      { setNumber: 3, repsAchieved: 1, actualWeightKg: 90, rpe: null },
     ];
     const result = update(
       scheme,
@@ -436,18 +458,21 @@ describe("prescribe/update: wave", () => {
         prescribedWeightKg: 40,
         repTarget: 5,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
       {
         setNumber: 2,
         prescribedWeightKg: 50,
         repTarget: 5,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
       {
         setNumber: 3,
         prescribedWeightKg: 60,
         repTarget: 5,
         countsTowardOneRm: false,
+        countsTowardRpeSignal: false,
       },
     ]);
 
@@ -460,6 +485,170 @@ describe("prescribe/update: wave", () => {
       trainingMaxKg: 100,
       weekIndex: 0,
       inDeload: false,
+      redStreak: 0,
+    });
+  });
+});
+
+// #60: Wave's optional RPE-triggered deload suggestion — redStreak's own
+// increment/reset rules, independent of the deload-entry paths tested
+// above (which all just assert redStreak lands on 0, the uncontroversial
+// case since something else already caused the deload that session).
+describe("prescribe/update: wave redStreak (#60)", () => {
+  const config: WaveConfig = {
+    trainingMaxPercentage: 90,
+    deloadMode: "on_regression",
+    usePreset: true,
+    weekTable: PRESET_5_3_1_WEEK_TABLE,
+    supplementalSetType: "none",
+  };
+  const scheme = { type: "wave" as const, config };
+
+  it("increments when the signal set's RPE is at or above the threshold", () => {
+    const sets: LoggedSetInput[] = [
+      { setNumber: 1, repsAchieved: 5, actualWeightKg: 65, rpe: null },
+      { setNumber: 2, repsAchieved: 5, actualWeightKg: 75, rpe: null },
+      { setNumber: 3, repsAchieved: 3, actualWeightKg: 85, rpe: 9 },
+    ];
+    const result = update(
+      scheme,
+      { trainingMaxKg: 100, weekIndex: 0, redStreak: 2 },
+      sets,
+    ) as WaveState;
+    expect(result.redStreak).toBe(3);
+  });
+
+  it("resets to 0 when the signal set's RPE is below the threshold", () => {
+    const sets: LoggedSetInput[] = [
+      { setNumber: 1, repsAchieved: 5, actualWeightKg: 65, rpe: null },
+      { setNumber: 2, repsAchieved: 5, actualWeightKg: 75, rpe: null },
+      { setNumber: 3, repsAchieved: 8, actualWeightKg: 85, rpe: 7 },
+    ];
+    const result = update(
+      scheme,
+      { trainingMaxKg: 100, weekIndex: 0, redStreak: 2 },
+      sets,
+    ) as WaveState;
+    expect(result.redStreak).toBe(0);
+  });
+
+  it("resets to 0 when the signal set has no RPE logged — a missing read never counts as red", () => {
+    const sets: LoggedSetInput[] = [
+      { setNumber: 1, repsAchieved: 5, actualWeightKg: 65, rpe: null },
+      { setNumber: 2, repsAchieved: 5, actualWeightKg: 75, rpe: null },
+      { setNumber: 3, repsAchieved: 3, actualWeightKg: 85, rpe: null },
+    ];
+    const result = update(
+      scheme,
+      { trainingMaxKg: 100, weekIndex: 0, redStreak: 2 },
+      sets,
+    ) as WaveState;
+    expect(result.redStreak).toBe(0);
+  });
+
+  it("resets to 0 when the signal set wasn't logged at all", () => {
+    const sets: LoggedSetInput[] = [
+      { setNumber: 1, repsAchieved: 5, actualWeightKg: 65, rpe: null },
+      { setNumber: 2, repsAchieved: 5, actualWeightKg: 75, rpe: null },
+      // Set 3 (the AMRAP/signal set) never logged this session.
+    ];
+    const result = update(
+      scheme,
+      { trainingMaxKg: 100, weekIndex: 0, redStreak: 2 },
+      sets,
+    ) as WaveState;
+    expect(result.redStreak).toBe(0);
+  });
+
+  it("climbs mid-cycle, reaching 3 before the end-of-cycle checkpoint on a longer custom table", () => {
+    // A 4-week custom table — the 3rd red week lands mid-cycle (weekIndex
+    // 2 of 0..3), not on the table's actual last working week.
+    const customConfig: WaveConfig = {
+      ...config,
+      usePreset: false,
+      weekTable: [
+        [{ percentageOfTrainingMax: 70, repTarget: "AMRAP" }],
+        [{ percentageOfTrainingMax: 70, repTarget: "AMRAP" }],
+        [{ percentageOfTrainingMax: 70, repTarget: "AMRAP" }],
+        [{ percentageOfTrainingMax: 70, repTarget: "AMRAP" }],
+      ],
+    };
+    const customScheme = { type: "wave" as const, config: customConfig };
+    const redSets: LoggedSetInput[] = [
+      { setNumber: 1, repsAchieved: 5, actualWeightKg: 70, rpe: 9.5 },
+    ];
+    const afterWeek1 = update(
+      customScheme,
+      { trainingMaxKg: 100, weekIndex: 0, redStreak: 0 },
+      redSets,
+    ) as WaveState;
+    expect(afterWeek1).toMatchObject({ weekIndex: 1, redStreak: 1 });
+
+    const afterWeek2 = update(customScheme, afterWeek1, redSets) as WaveState;
+    expect(afterWeek2).toMatchObject({ weekIndex: 2, redStreak: 2 });
+
+    const afterWeek3 = update(customScheme, afterWeek2, redSets) as WaveState;
+    // Mid-cycle (weekIndex 2 of 0..3, not the last working week) — advances
+    // normally, doesn't force a deload by itself, but the streak is already
+    // eligible (>= 3) for the Log page banner to offer one.
+    expect(afterWeek3).toMatchObject({
+      weekIndex: 3,
+      inDeload: false,
+      redStreak: 3,
+    });
+  });
+});
+
+describe("pickWaveSignalSetNumber (#60)", () => {
+  it("returns the AMRAP set's number when the week has one", () => {
+    expect(
+      pickWaveSignalSetNumber([
+        { percentageOfTrainingMax: 65, repTarget: 5 },
+        { percentageOfTrainingMax: 75, repTarget: 5 },
+        { percentageOfTrainingMax: 85, repTarget: "AMRAP" },
+      ]),
+    ).toBe(3);
+  });
+
+  it("falls back to the highest percentageOfTrainingMax main set when there's no AMRAP", () => {
+    expect(
+      pickWaveSignalSetNumber([
+        { percentageOfTrainingMax: 70, repTarget: 5 },
+        { percentageOfTrainingMax: 90, repTarget: 3 },
+        { percentageOfTrainingMax: 80, repTarget: 5 },
+      ]),
+    ).toBe(2);
+  });
+
+  it("breaks a tie in the highest percentage by keeping the higher set number", () => {
+    expect(
+      pickWaveSignalSetNumber([
+        { percentageOfTrainingMax: 90, repTarget: 3 },
+        { percentageOfTrainingMax: 90, repTarget: 3 },
+      ]),
+    ).toBe(2);
+  });
+
+  it("returns set 1 for a single-set week with no AMRAP", () => {
+    expect(
+      pickWaveSignalSetNumber([{ percentageOfTrainingMax: 70, repTarget: 5 }]),
+    ).toBe(1);
+  });
+});
+
+describe("acceptRpeDeloadSuggestion (#60)", () => {
+  it("flips inDeload true and resets redStreak, carrying trainingMaxKg/weekIndex through unchanged", () => {
+    const state: WaveState = {
+      trainingMaxKg: 100,
+      weekIndex: 1,
+      inDeload: false,
+      redStreak: 3,
+    };
+    expect(acceptRpeDeloadSuggestion(state)).toEqual({
+      trainingMaxKg: 100,
+      weekIndex: 1,
+      inDeload: true,
+      redStreak: 0,
     });
   });
 });

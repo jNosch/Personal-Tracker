@@ -8,6 +8,7 @@ function set(overrides: Partial<PrescribedSet> = {}): PrescribedSet {
     prescribedWeightKg: 50,
     repTarget: 8,
     countsTowardOneRm: false,
+    countsTowardRpeSignal: false,
     ...overrides,
   };
 }

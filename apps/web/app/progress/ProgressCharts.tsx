@@ -14,6 +14,7 @@ import {
   computeBodyweightMultiple,
   computeDelta,
   filterByRange,
+  HIGH_RPE_THRESHOLD,
   RANGES,
   type ExerciseRpeTrend,
   type RangeKey,
@@ -277,11 +278,6 @@ const LINE_OPACITY = 0.7;
 // Distinct color, not a gray — a muted gray line was hard to distinguish
 // against the near-white gridlines/background depending on viewer theme.
 const BODYWEIGHT_COLOR = "#db2777";
-// A session average at or above this reads as near-maximal effort — the
-// "you might need a deload" signal RpeBox exists to surface (#56). Not a
-// resolved spec number, an implementation judgement call — easy to retune
-// since it's named, not scattered as a bare literal.
-const HIGH_RPE_THRESHOLD = 9;
 // Shared "just a value, not a judgment" text color — BodyweightMultipleBadge
 // and RpeBox's non-high readings both want this same muted tone rather than
 // each hardcoding "#666" independently.
@@ -322,6 +318,12 @@ interface ProgressChartsProps {
   // when there's an active program, so RpeBox itself doesn't render
   // otherwise (see below).
   recentRpe: ExerciseRpeTrend[];
+  // #60: exerciseIds (active-program-scoped) whose Wave redStreak has hit
+  // 3+ with no deload underway yet — RpeBox marks these with a small
+  // passive flag next to the name. The actionable Accept button lives only
+  // on the Log page (app/log/LogSessionForm.tsx's RpeDeloadBanner); this is
+  // read-only, same eligibility rule, different surface.
+  suggestDeloadExerciseIds: string[];
 }
 
 function DeltaBadge({ value }: { value: number | null }) {
@@ -390,6 +392,7 @@ function BodyweightMultipleBadge({ value }: { value: number | null }) {
 function RpeBox({
   trends,
   exercises,
+  suggestDeloadExerciseIds,
 }: {
   trends: ExerciseRpeTrend[];
   // Active-program-scoped list (the `exercises` prop, not `allExercises`)
@@ -397,6 +400,9 @@ function RpeBox({
   // match what the chart looks like with the "show all" toggle off, not
   // shift depending on that toggle's current state.
   exercises: ExerciseOption[];
+  // #60: passive echo of the Log page's deload suggestion — see the prop's
+  // own doc comment on ProgressChartsProps.
+  suggestDeloadExerciseIds: string[];
 }) {
   return (
     <div
@@ -426,6 +432,16 @@ function RpeBox({
                 }}
               >
                 {t.exerciseName}
+                {/* #60: passive flag — 3+ consecutive red weeks, deload
+                    suggestion pending on the Log page. Not clickable here;
+                    a title attr spells it out since the icon alone doesn't
+                    self-explain. */}
+                {suggestDeloadExerciseIds.includes(t.exerciseId) && (
+                  <span title="3+ weeks of high RPE — deload suggested on the Log page">
+                    {" "}
+                    ⚠
+                  </span>
+                )}
               </div>
               <div style={{ display: "flex", gap: 10 }}>
                 {t.readings.map((r) => (
@@ -481,6 +497,7 @@ export default function ProgressCharts({
   bodyweightSeries,
   hasActiveProgram,
   recentRpe,
+  suggestDeloadExerciseIds,
 }: ProgressChartsProps) {
   // Default: everything toggled on. With a handful of tracked exercises
   // (the expected case for a single-user tracker) an overlay of all of them
@@ -829,7 +846,11 @@ export default function ProgressCharts({
             otherwise show a pointless empty state alongside "no active
             program" in the box beside it. */}
         {hasActiveProgram && (
-          <RpeBox trends={recentRpe} exercises={exercises} />
+          <RpeBox
+            trends={recentRpe}
+            exercises={exercises}
+            suggestDeloadExerciseIds={suggestDeloadExerciseIds}
+          />
         )}
       </div>
 

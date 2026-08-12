@@ -96,12 +96,31 @@ export function computeBodyweightMultiple(
   return Math.round((latest.value / bw) * 10) / 10;
 }
 
+// A session reading at or above this reads as near-maximal effort — the
+// "you might need a deload" signal RpeBox exists to surface (#56), and the
+// same bar Wave's redStreak deload trigger uses (#60). Not a resolved spec
+// number, an implementation judgement call — shared here (not duplicated in
+// ProgressCharts.tsx or schemes.ts) since both now read it.
+export const HIGH_RPE_THRESHOLD = 9;
+
 export interface RpeReading {
   sessionId: string;
   date: string; // ISO date
   exerciseId: string;
   exerciseName: string;
+  // Which scheme prescribed this set — determines how the session's
+  // reading is picked below (#60). Not narrowed to SchemeType here to avoid
+  // a lib/-to-lib/ import just for a string union; callers already have the
+  // real type from db/schema.ts's exerciseInDay.schemeType.
+  schemeType: string;
   rpe: number;
+  // Stamped at log time (schemes.ts's prescribeWave) on exactly the set
+  // Wave's own "AMRAP, else heaviest main set" rule designates that week —
+  // #60's redefinition of "the set that counts" for Wave, replacing the
+  // flat all-sets average below. Always false for every non-wave scheme in
+  // this ticket's scope (Ticket B gives Double Progression/Topset+Backoff
+  // their own designation later).
+  countsTowardRpeSignal: boolean;
 }
 
 export interface RpeTrendPoint {
@@ -129,18 +148,34 @@ export interface ExerciseRpeTrend {
 // sessionId, not date — two sessions can share a calendar day (same lesson
 // as #46's same-day chart collapse: never key time-series grouping off
 // date strings alone when a stable id exists). Purely a display aggregate,
-// not an autoregulation input (#56's resolved scope) — no progression math
-// reads this.
+// not an autoregulation input for any *other* progression math (#56's
+// original scope) — Wave's own redStreak deload trigger (#60) reimplements
+// the same "which set counts" rule independently in schemes.ts rather than
+// reading this function's output, since updateWave only ever sees one
+// session at a time and already has the config it needs.
+//
+// #60: for a Wave-scheme session, the session's point is that session's
+// countsTowardRpeSignal-flagged reading (AMRAP set, else the heaviest main
+// set — stamped at log time by prescribeWave) rather than an average of
+// every logged set — supplemental (BBB/FSL/SSL/custom) sets would otherwise
+// dilute a brutal main-set week with easy backoff volume. A Wave session
+// with no flagged reading (every set logging RPE that session happens not to
+// include the designated one — pre-#60 historic rows are backfilled by
+// migration 0002, see that file's comment, so they're not the reason a
+// session would land here) contributes no point at all, rather than
+// silently falling back to the old flat average — a reading under this
+// box's "AMRAP or heaviest" heading should mean what it says.
+// Every other scheme keeps the original flat all-sets-that-session average
+// until its own ticket defines a "set that counts" (see #61).
 export function recentExerciseRpeTrends(
   readings: RpeReading[],
   limit: number,
 ): ExerciseRpeTrend[] {
   if (limit <= 0) return [];
   // (exerciseId, sessionId) -> that session's readings for that exercise —
-  // resolved to one averaged point per (exercise, session) before grouping
-  // by exercise, so multiple sets logging RPE the same session collapse
-  // into a single trend point rather than each counting toward `limit`
-  // separately.
+  // resolved to one point per (exercise, session) before grouping by
+  // exercise, so multiple sets logging RPE the same session collapse into a
+  // single trend point rather than each counting toward `limit` separately.
   const bySessionExercise = new Map<
     string,
     {
@@ -148,20 +183,26 @@ export function recentExerciseRpeTrends(
       exerciseName: string;
       sessionId: string;
       date: string;
+      schemeType: string;
       values: number[];
+      signalValues: number[];
     }
   >();
   for (const r of readings) {
     const key = `${r.exerciseId}:${r.sessionId}`;
     const existing = bySessionExercise.get(key);
-    if (existing) existing.values.push(r.rpe);
-    else
+    if (existing) {
+      existing.values.push(r.rpe);
+      if (r.countsTowardRpeSignal) existing.signalValues.push(r.rpe);
+    } else
       bySessionExercise.set(key, {
         exerciseId: r.exerciseId,
         exerciseName: r.exerciseName,
         sessionId: r.sessionId,
         date: r.date,
+        schemeType: r.schemeType,
         values: [r.rpe],
+        signalValues: r.countsTowardRpeSignal ? [r.rpe] : [],
       });
   }
   const byExercise = new Map<
@@ -169,10 +210,11 @@ export function recentExerciseRpeTrends(
     { exerciseName: string; points: RpeTrendPoint[] }
   >();
   for (const s of bySessionExercise.values()) {
+    const source = s.schemeType === "wave" ? s.signalValues : s.values;
+    if (source.length === 0) continue; // wave session, nothing flagged yet
     const avgRpe =
-      Math.round(
-        (s.values.reduce((sum, v) => sum + v, 0) / s.values.length) * 10,
-      ) / 10;
+      Math.round((source.reduce((sum, v) => sum + v, 0) / source.length) * 10) /
+      10;
     const point: RpeTrendPoint = {
       sessionId: s.sessionId,
       date: s.date,

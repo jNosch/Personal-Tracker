@@ -6,6 +6,9 @@
 // SchemeType itself lives in db/schema.ts (SCHEME_TYPES) — reused here
 // rather than redefined, since the DB column is the canonical source.
 import { type SchemeType } from "../db/schema";
+// Shared with the Progress page's RpeBox (#56/#60) — "what counts as a red
+// reading" is one bar, not two independently-tuned ones.
+import { HIGH_RPE_THRESHOLD } from "./progressRange";
 
 export const SCHEME_CATALOG: {
   type: SchemeType;
@@ -194,6 +197,14 @@ export interface WaveState {
   // inDeload is true.
   weekIndex?: number;
   inDeload?: boolean;
+  // #60: consecutive count of red (RPE >= HIGH_RPE_THRESHOLD on the signal
+  // set) sessions just logged, most recent unbroken run only — resets to 0
+  // on a non-red or no-RPE-logged session (missing data doesn't get the
+  // benefit of the doubt) and whenever inDeload flips true, for any reason.
+  // Reaching 3 doesn't deload anything by itself — it only makes the Log
+  // page's suggestion banner eligible to show; acceptRpeDeloadSuggestion is
+  // the only thing that actually flips inDeload from this signal.
+  redStreak?: number;
 }
 
 export type SchemeState =
@@ -216,6 +227,15 @@ export interface PrescribedSet {
   // reps-≤10 fallback, resolved at save time once actual reps are known
   // (see resolveCountsTowardOneRm in lib/oneRm.ts), not at prescribe time.
   countsTowardOneRm: boolean;
+  // #60: which set's RPE feeds RpeBox's Wave-row display and Wave's
+  // redStreak deload trigger — the AMRAP set for that week, else the
+  // heaviest main set (see pickWaveSignalSetNumber). Always false outside
+  // Wave in this ticket's scope; a separate, independent flag from
+  // countsTowardOneRm since "which set counts toward 1RM" and "which set's
+  // RPE represents the week" aren't always the same set (e.g. a custom week
+  // table with no AMRAP row still needs an RPE signal but has nothing that
+  // counts toward 1RM that week).
+  countsTowardRpeSignal: boolean;
 }
 
 // What update() needs from a session's actual results. actualWeightKg is
@@ -225,6 +245,10 @@ export interface LoggedSetInput {
   setNumber: number;
   repsAchieved: number | null;
   actualWeightKg: number | null;
+  // #60: threaded through from app/log/actions.ts's SessionSetEntry — was
+  // captured at log time long before this (#56) but never reached update()
+  // until Wave's redStreak trigger needed it.
+  rpe: number | null;
 }
 
 // Nearest-plate rounding for computed prescriptions (Wave's percentage
@@ -248,6 +272,7 @@ function prescribeDoubleProgression(
     prescribedWeightKg: weight,
     repTarget,
     countsTowardOneRm: false,
+    countsTowardRpeSignal: false,
   }));
 }
 
@@ -290,6 +315,7 @@ function prescribeRepAccumulation(
     prescribedWeightKg: weight,
     repTarget: null,
     countsTowardOneRm: true,
+    countsTowardRpeSignal: false,
   }));
 }
 
@@ -325,6 +351,7 @@ function prescribeTopsetBackoff(
     prescribedWeightKg: weight,
     repTarget,
     countsTowardOneRm: true,
+    countsTowardRpeSignal: false,
   };
   const backoffSets: PrescribedSet[] = Array.from(
     { length: config.backoffSetCount },
@@ -333,6 +360,7 @@ function prescribeTopsetBackoff(
       prescribedWeightKg: backoffWeight,
       repTarget: config.backoffRepTarget,
       countsTowardOneRm: false,
+      countsTowardRpeSignal: false,
     }),
   );
   return [topSet, ...backoffSets];
@@ -367,6 +395,7 @@ function prescribeFailureSets(config: FailureSetsConfig): PrescribedSet[] {
     prescribedWeightKg: null,
     repTarget: null,
     countsTowardOneRm: false,
+    countsTowardRpeSignal: false,
   }));
 }
 
@@ -415,7 +444,32 @@ function buildSupplementalSets(
     prescribedWeightKg: weight,
     repTarget: supp.repTarget,
     countsTowardOneRm: false,
+    countsTowardRpeSignal: false,
   }));
+}
+
+// #60: "the set that counts" for a Wave week's RPE signal — the AMRAP set
+// if that week has one, else the main set with the highest
+// percentageOfTrainingMax (ties broken by the higher set number; heavier
+// work is conventionally sequenced last, matching the preset's own
+// ordering). Returns a 1-based setNumber, matching PrescribedSet/
+// LoggedSetInput's own numbering. Never considers supplemental sets — they
+// aren't part of weekSets, so they're structurally excluded already.
+// Shared by prescribeWave (stamps the flag for later display, #56) and
+// updateWave (reads it live for the redStreak trigger) — one rule, not two.
+export function pickWaveSignalSetNumber(weekSets: WaveWeekSet[]): number {
+  const amrapIndex = weekSets.findIndex((s) => s.repTarget === "AMRAP");
+  if (amrapIndex !== -1) return amrapIndex + 1;
+  let heaviestIndex = 0;
+  for (let i = 1; i < weekSets.length; i++) {
+    if (
+      weekSets[i]!.percentageOfTrainingMax >=
+      weekSets[heaviestIndex]!.percentageOfTrainingMax
+    ) {
+      heaviestIndex = i; // >=, not >, so a tie keeps the higher set number
+    }
+  }
+  return heaviestIndex + 1;
 }
 
 function prescribeWave(config: WaveConfig, state: WaveState): PrescribedSet[] {
@@ -425,6 +479,9 @@ function prescribeWave(config: WaveConfig, state: WaveState): PrescribedSet[] {
   const weekSets = inDeload
     ? DELOAD_WEEK
     : (config.weekTable[weekIndex] ?? config.weekTable[0]!);
+  // #60: never stamped during deload — DELOAD_WEEK has no AMRAP and isn't a
+  // real training week, so it has nothing meaningful to signal.
+  const signalSetNumber = inDeload ? -1 : pickWaveSignalSetNumber(weekSets);
 
   const mainSets: PrescribedSet[] = weekSets.map((s, i) => ({
     setNumber: i + 1,
@@ -438,6 +495,7 @@ function prescribeWave(config: WaveConfig, state: WaveState): PrescribedSet[] {
     // >10 reps and silently miss the reps-≤10 fallback, undermining the
     // training-max recalculation below which depends on it.
     countsTowardOneRm: s.repTarget === "AMRAP",
+    countsTowardRpeSignal: i + 1 === signalSetNumber,
   }));
 
   if (inDeload) return mainSets;
@@ -455,6 +513,8 @@ function prescribeWave(config: WaveConfig, state: WaveState): PrescribedSet[] {
 //    cycle's week 0.
 //  - deload week just logged -> always roll into next cycle's week 0, no
 //    recalculation (deload has no AMRAP to read, #16).
+// #60's redStreak rides along on every branch above except the deload-week
+// one — see that field's own doc comment on WaveState.
 function updateWave(
   config: WaveConfig,
   state: WaveState,
@@ -465,15 +525,34 @@ function updateWave(
   const inDeload = state.inDeload ?? false;
 
   if (inDeload) {
-    return { trainingMaxKg, weekIndex: 0, inDeload: false };
+    return { trainingMaxKg, weekIndex: 0, inDeload: false, redStreak: 0 };
   }
+
+  // #60: computed for every real working week, mid-cycle or not — the
+  // suggestion has to become eligible the moment the 3rd red week is
+  // logged, not wait for the end-of-cycle checkpoint below (custom week
+  // tables, #16, can run longer than 3 weeks).
+  const weekSets = config.weekTable[weekIndex] ?? config.weekTable[0]!;
+  const signalSetNumber = pickWaveSignalSetNumber(weekSets);
+  const signalSet = sets.find((s) => s.setNumber === signalSetNumber);
+  // No RPE on the signal set — whether it wasn't logged at all or logged
+  // with RPE left blank — breaks the streak rather than being skipped:
+  // "3 consecutive" means 3 consecutive *confirmed* reads, not reads with
+  // silent gaps papered over (decided in chat: logging RPE accurately is
+  // the user's own job, a missing read is never assumed high).
+  const isRed = (signalSet?.rpe ?? -Infinity) >= HIGH_RPE_THRESHOLD;
+  const newRedStreak = isRed ? (state.redStreak ?? 0) + 1 : 0;
 
   const isLastWorkingWeek = weekIndex >= config.weekTable.length - 1;
   if (!isLastWorkingWeek) {
-    return { trainingMaxKg, weekIndex: weekIndex + 1, inDeload: false };
+    return {
+      trainingMaxKg,
+      weekIndex: weekIndex + 1,
+      inDeload: false,
+      redStreak: newRedStreak,
+    };
   }
 
-  const weekSets = config.weekTable[weekIndex]!;
   const amrapSetNumber = weekSets.findIndex((s) => s.repTarget === "AMRAP") + 1;
   const amrapLogged = sets.find((s) => s.setNumber === amrapSetNumber);
   let newTrainingMaxKg = trainingMaxKg;
@@ -494,9 +573,41 @@ function updateWave(
     (config.deloadMode === "on_regression" && regressed);
 
   if (shouldDeload) {
-    return { trainingMaxKg: newTrainingMaxKg, weekIndex, inDeload: true };
+    return {
+      trainingMaxKg: newTrainingMaxKg,
+      weekIndex,
+      inDeload: true,
+      // Deloading now for another reason already — the streak that would
+      // otherwise have suggested the same thing is moot (WaveState's
+      // doc comment: resets whenever inDeload flips true, any trigger).
+      redStreak: 0,
+    };
   }
-  return { trainingMaxKg: newTrainingMaxKg, weekIndex: 0, inDeload: false };
+  return {
+    trainingMaxKg: newTrainingMaxKg,
+    weekIndex: 0,
+    inDeload: false,
+    redStreak: newRedStreak,
+  };
+}
+
+// #60: the Log page banner's Accept action — the *only* thing that turns a
+// redStreak >= 3 suggestion into a real deload. Deliberately dumb/pure: no
+// eligibility check in here (the caller, app/log/actions.ts's server
+// action, re-reads current state and confirms redStreak >= 3 && !inDeload
+// right before calling this, guarding against a stale page suggesting
+// something that's no longer true). trainingMaxKg/weekIndex carry through
+// unchanged — same as every other deload-entry path, prescribeWave ignores
+// weekIndex entirely while inDeload is true, and it's restored to week 0
+// the moment the deload week itself gets logged (updateWave's inDeload
+// branch above).
+export function acceptRpeDeloadSuggestion(state: WaveState): WaveState {
+  return {
+    trainingMaxKg: state.trainingMaxKg,
+    weekIndex: state.weekIndex,
+    inDeload: true,
+    redStreak: 0,
+  };
 }
 
 /** state + config -> next occurrence's prescribed sets (#8). */
