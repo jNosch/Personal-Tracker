@@ -1,0 +1,1 @@
+ALTER TABLE "exercise_in_day" ADD COLUMN "set_styles" jsonb DEFAULT '[]'::jsonb NOT NULL;

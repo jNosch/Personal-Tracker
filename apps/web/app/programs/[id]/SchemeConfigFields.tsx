@@ -9,6 +9,13 @@ import {
   type SchemeConfig,
   type WaveWeekSet,
 } from "../../../lib/schemes";
+import {
+  setStyleAt,
+  styleAt,
+  validSetStylePositions,
+  type SetStyle,
+  type SetStyleEntry,
+} from "../../../lib/setStyles";
 
 const numInput = (value: number, onChange: (v: number) => void, width = 56) => (
   <input
@@ -27,12 +34,104 @@ const labelStyle = {
 };
 const field = { marginBottom: 10 };
 
+// #66: one 3-state toggle per set — none / rest-pause / cluster, cycled by
+// click rather than two independent checkboxes, since the two styles are
+// mutually exclusive by design (opposite-intensity execution styles for
+// one set, not stackable modifiers — see setStyles.ts's own comment on
+// SetStyleEntry).
+function SetStyleChip({
+  value,
+  onChange,
+}: {
+  value: SetStyle | null;
+  onChange: (next: SetStyle | null) => void;
+}) {
+  function cycle() {
+    onChange(
+      value === null ? "rest_pause" : value === "rest_pause" ? "cluster" : null,
+    );
+  }
+  const label =
+    value === "rest_pause" ? "RP" : value === "cluster" ? "CS" : "—";
+  const title =
+    value === "rest_pause"
+      ? "Rest-pause — click to change"
+      : value === "cluster"
+        ? "Cluster set — click to change"
+        : "No style tag — click to cycle";
+  return (
+    <button
+      type="button"
+      onClick={cycle}
+      title={title}
+      style={{
+        width: 28,
+        height: 22,
+        fontSize: 11,
+        borderRadius: 4,
+        border: `1px solid ${value ? "#111" : "#ddd"}`,
+        background: value ? "#111" : "#fff",
+        color: value ? "#fff" : "#999",
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+// Shared by every flat-set-list scheme (Double Progression, Rep
+// Accumulation, Top-set+Backoff) — Wave renders its own chips inline per
+// week/set instead, since its positions need a weekIndex the other schemes
+// don't have (see setStyles.ts's SetStyleEntry comment). Renders nothing
+// for Failure Sets: validSetStylePositions returns no positions for it, so
+// `positions` is empty and there's nothing to render — no scheme-type
+// branching needed here, the exclusion falls out of that function.
+function SetStyleRow({
+  scheme,
+  setStyles,
+  onSetStylesChange,
+}: {
+  scheme: SchemeConfig;
+  setStyles: SetStyleEntry[];
+  onSetStylesChange: (next: SetStyleEntry[]) => void;
+}) {
+  const positions = validSetStylePositions(scheme);
+  if (positions.length === 0) return null;
+  return (
+    <div style={field}>
+      <span style={labelStyle}>Set styles (rest-pause / cluster)</span>
+      <div style={{ display: "flex", gap: 8 }}>
+        {positions.map((p) => (
+          <div key={p.setNumber} style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 10, color: "#999", marginBottom: 2 }}>
+              {p.setNumber}
+            </div>
+            <SetStyleChip
+              value={styleAt(setStyles, p.weekIndex, p.setNumber)}
+              onChange={(next) =>
+                onSetStylesChange(
+                  setStyleAt(setStyles, p.weekIndex, p.setNumber, next),
+                )
+              }
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SchemeConfigFields({
   scheme,
   onChange,
+  setStyles,
+  onSetStylesChange,
 }: {
   scheme: SchemeConfig;
   onChange: (next: SchemeConfig) => void;
+  setStyles: SetStyleEntry[];
+  onSetStylesChange: (next: SetStyleEntry[]) => void;
 }) {
   if (scheme.type === "double_progression") {
     const c = scheme.config;
@@ -53,6 +152,11 @@ export default function SchemeConfigFields({
           <span style={labelStyle}>Weight increment (kg)</span>
           {numInput(c.weightIncrement, (v) => set({ weightIncrement: v }))}
         </div>
+        <SetStyleRow
+          scheme={scheme}
+          setStyles={setStyles}
+          onSetStylesChange={onSetStylesChange}
+        />
       </div>
     );
   }
@@ -75,6 +179,11 @@ export default function SchemeConfigFields({
           <span style={labelStyle}>Weight increment (kg)</span>
           {numInput(c.weightIncrement, (v) => set({ weightIncrement: v }))}
         </div>
+        <SetStyleRow
+          scheme={scheme}
+          setStyles={setStyles}
+          onSetStylesChange={onSetStylesChange}
+        />
       </div>
     );
   }
@@ -118,6 +227,11 @@ export default function SchemeConfigFields({
           <span style={labelStyle}>Rep target</span>
           {numInput(c.backoffRepTarget, (v) => set({ backoffRepTarget: v }))}
         </div>
+        <SetStyleRow
+          scheme={scheme}
+          setStyles={setStyles}
+          onSetStylesChange={onSetStylesChange}
+        />
       </div>
     );
   }
@@ -247,7 +361,54 @@ export default function SchemeConfigFields({
         </label>
       </div>
 
-      {!c.usePreset && (
+      {c.usePreset ? (
+        // #66: the preset locks weekTable's own numbers (no editable
+        // inputs — that's what "locked" means), but set-style chips still
+        // need somewhere to attach. Without this branch, preset exercises
+        // (the common case — this is the default) would have no week/set
+        // list rendered at all and the feature would be silently
+        // unusable for them.
+        <div
+          style={{ border: "1px solid #e5e5e5", borderRadius: 6, padding: 10 }}
+        >
+          <div style={{ fontSize: 12, color: "#666", marginBottom: 6 }}>
+            5/3/1 preset weeks
+          </div>
+          {c.weekTable.map((week, wi) => (
+            <div
+              key={wi}
+              style={{
+                marginBottom: 8,
+                paddingBottom: 8,
+                borderBottom: "1px solid #f0f0f0",
+              }}
+            >
+              <div style={{ fontSize: 12, marginBottom: 4 }}>Week {wi + 1}</div>
+              {week.map((s, si) => (
+                <div
+                  key={si}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    marginBottom: 4,
+                  }}
+                >
+                  <span style={{ width: 90, color: "#999", fontSize: 13 }}>
+                    {s.percentageOfTrainingMax}% × {s.repTarget}
+                  </span>
+                  <SetStyleChip
+                    value={styleAt(setStyles, wi, si + 1)}
+                    onChange={(next) =>
+                      onSetStylesChange(setStyleAt(setStyles, wi, si + 1, next))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : (
         <div
           style={{ border: "1px solid #e5e5e5", borderRadius: 6, padding: 10 }}
         >
@@ -309,6 +470,12 @@ export default function SchemeConfigFields({
                     }}
                     placeholder="reps or AMRAP"
                     style={{ width: 80, padding: 4 }}
+                  />
+                  <SetStyleChip
+                    value={styleAt(setStyles, wi, si + 1)}
+                    onChange={(next) =>
+                      onSetStylesChange(setStyleAt(setStyles, wi, si + 1, next))
+                    }
                   />
                 </div>
               ))}

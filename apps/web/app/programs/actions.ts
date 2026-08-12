@@ -15,6 +15,7 @@ import {
   programs,
 } from "../../db/schema";
 import { defaultConfigFor, type SchemeConfig } from "../../lib/schemes";
+import { pruneSetStyles, type SetStyleEntry } from "../../lib/setStyles";
 
 function programPath(programId: string) {
   return `/programs/${programId}`;
@@ -223,10 +224,18 @@ export async function archiveExerciseInDay(
 // Changing scheme type resets state to {} — old state's shape belongs to
 // the previous scheme and is meaningless under a new one. Same first-time-
 // initialization handoff to #29 as addExerciseInDay above.
+// #66: setStyles is pruned here, not trusted as-is from the client — the
+// draft the program builder was editing may have referenced set positions
+// (setNumber, or (weekIndex, setNumber) for Wave) that this same save just
+// invalidated (setCount lowered, a Wave week removed, usePreset flipped).
+// pruneSetStyles drops anything that no longer matches the config being
+// saved alongside it, so stored styles never point at a set that doesn't
+// exist.
 export async function updateExerciseScheme(
   programId: string,
   exerciseInDayId: string,
   scheme: SchemeConfig,
+  setStyles: SetStyleEntry[],
 ) {
   await db
     .update(exerciseInDay)
@@ -234,6 +243,7 @@ export async function updateExerciseScheme(
       schemeType: scheme.type,
       schemeConfig: scheme.config,
       schemeState: {},
+      setStyles: pruneSetStyles(scheme, setStyles),
     })
     .where(eq(exerciseInDay.id, exerciseInDayId));
   revalidatePath(programPath(programId));

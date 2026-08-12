@@ -8,6 +8,7 @@ import {
   programs,
 } from "../../../db/schema";
 import type { SchemeConfig } from "../../../lib/schemes";
+import type { SetStyleEntry } from "../../../lib/setStyles";
 import ProgramEditor from "./ProgramEditor";
 
 // Same reasoning as app/programs/page.tsx — not statically prerenderable.
@@ -57,6 +58,8 @@ export default async function ProgramPage({
       id: ex.id,
       exercise: ex.exercise,
       scheme: { type: ex.schemeType, config: ex.schemeConfig } as SchemeConfig,
+      // #66: same cast-at-the-boundary reasoning as scheme above.
+      setStyles: ex.setStyles as SetStyleEntry[],
     })),
   }));
 

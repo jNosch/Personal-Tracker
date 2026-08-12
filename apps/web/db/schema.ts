@@ -105,6 +105,13 @@ export const exerciseInDay = pgTable(
     schemeConfig: jsonb("scheme_config").notNull(),
     // Dynamic state the scheme's update() evolves after every session.
     schemeState: jsonb("scheme_state").notNull(),
+    // Per-set rest-pause/cluster style tags (#66) — deliberately a sibling
+    // of schemeConfig/schemeState, not nested inside either. Metadata only
+    // (lib/setStyles.ts's SetStyleEntry[]): never read by prescribe()/
+    // update(), pruned to match the current schemeConfig's actual set
+    // shape on every save (see updateExerciseScheme, app/programs/
+    // actions.ts) rather than left to go stale.
+    setStyles: jsonb("set_styles").notNull().default([]),
     isArchived: boolean("is_archived").notNull().default(false),
   },
   (t) => [
