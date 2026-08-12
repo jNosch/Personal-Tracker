@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import type { SchemeConfig } from "../../../lib/schemes";
 import { SCHEME_CATALOG, defaultConfigFor } from "../../../lib/schemes";
+import type { SetStyleEntry } from "../../../lib/setStyles";
 import {
   addDayTemplate,
   addExerciseInDay,
@@ -36,6 +37,7 @@ interface ExerciseInDayView {
   id: string;
   exercise: Exercise;
   scheme: SchemeConfig;
+  setStyles: SetStyleEntry[];
 }
 
 interface DayView {
@@ -446,6 +448,15 @@ function ExercisePanel({
   startTransition: (fn: () => void | Promise<void>) => void;
 }) {
   const [draft, setDraft] = useState<SchemeConfig>(exerciseInDay.scheme);
+  // #66: kept separate from `draft` (not nested inside SchemeConfig) —
+  // matches setStyles.ts's own reasoning for why the two live apart.
+  // Not reset on a scheme-type change below; updateExerciseScheme prunes
+  // against whatever `draft` ends up being at save time regardless, so a
+  // type switch that leaves stale entries here is caught there rather than
+  // needing a second reset path here.
+  const [draftStyles, setDraftStyles] = useState<SetStyleEntry[]>(
+    exerciseInDay.setStyles,
+  );
 
   return (
     <div style={{ padding: "0 12px 12px" }}>
@@ -475,12 +486,22 @@ function ExercisePanel({
           ))}
         </select>
       </div>
-      <SchemeConfigFields scheme={draft} onChange={setDraft} />
+      <SchemeConfigFields
+        scheme={draft}
+        onChange={setDraft}
+        setStyles={draftStyles}
+        onSetStylesChange={setDraftStyles}
+      />
       <button
         disabled={pending}
         onClick={() => {
           startTransition(() =>
-            updateExerciseScheme(programId, exerciseInDay.id, draft),
+            updateExerciseScheme(
+              programId,
+              exerciseInDay.id,
+              draft,
+              draftStyles,
+            ),
           );
           onSave();
         }}

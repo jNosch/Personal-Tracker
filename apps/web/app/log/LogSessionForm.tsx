@@ -15,17 +15,25 @@ import {
   loggedTotalReps,
 } from "../../lib/logEntry";
 import type { PrescribedSet } from "../../lib/schemes";
+import type { SetStyle } from "../../lib/setStyles";
 import {
   acceptWaveRpeDeloadSuggestion,
   logSession,
   setTrainingMax,
 } from "./actions";
 
+// #66: PrescribedSet itself stays untouched (style tags never reach the
+// scheme engine, see setStyles.ts's file-header comment) — this is a
+// display-only join done at the page.tsx layer, between prescribe()'s
+// output and whatever's stored in exerciseInDay.setStyles for the current
+// week.
+type LogSetView = PrescribedSet & { style: SetStyle | null };
+
 interface ExerciseView {
   exerciseInDayId: string;
   exerciseName: string;
   schemeType: string;
-  sets: PrescribedSet[];
+  sets: LogSetView[];
   needsTrainingMax: boolean;
   // #57: Rep Accumulation's whole-session-total target (undefined for
   // every other scheme) — the per-set label alone ("weight×—") doesn't say
@@ -310,6 +318,25 @@ export default function LogSessionForm({
                         style={inputStyle(58)}
                       />
                     </>
+                  )}
+                  {set.style && (
+                    // #66: advisory only — see LogSetView's own comment.
+                    // Pinned to the row's right edge (marginLeft: auto)
+                    // rather than sitting inline before the inputs — a
+                    // flagged set was pushing every input a few px right
+                    // of an unflagged one, which is more distracting than
+                    // useful for a label nobody needs to read to fill the
+                    // inputs in.
+                    <span
+                      style={{
+                        marginLeft: "auto",
+                        fontSize: 15,
+                        color: "#999",
+                        fontStyle: "italic",
+                      }}
+                    >
+                      {set.style === "rest_pause" ? "rest-pause" : "cluster"}
+                    </span>
                   )}
                 </div>
               );

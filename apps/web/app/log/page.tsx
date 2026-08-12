@@ -7,6 +7,7 @@ import {
   type SchemeConfig,
   type WaveState,
 } from "../../lib/schemes";
+import { styleAt, type SetStyleEntry } from "../../lib/setStyles";
 import LogSessionForm from "./LogSessionForm";
 
 // Same reasoning as app/programs/page.tsx — not statically prerenderable.
@@ -61,6 +62,25 @@ export default async function LogPage() {
       scheme.type === "wave" ? (ex.schemeState as WaveState) : undefined;
     const needsTrainingMax =
       scheme.type === "wave" && waveState!.trainingMaxKg == null;
+    // #66: styleWeekIndex is deliberately null during deload even though
+    // waveState.weekIndex still holds a real number (preserved for after
+    // deload ends, see schemes.ts) — DELOAD_WEEK's 3 sets are numbered
+    // 1/2/3 same as any real week's, so passing the stale weekIndex through
+    // here would let a real week's style tag wrongly show up on the deload
+    // week's sets. Stored Wave entries never use weekIndex: null (see
+    // setStyles.ts), so this null is a genuine "never match" sentinel, not
+    // a coincidence.
+    const styleWeekIndex =
+      scheme.type === "wave"
+        ? waveState!.inDeload
+          ? null
+          : (waveState!.weekIndex ?? 0)
+        : null;
+    const setStyles = ex.setStyles as SetStyleEntry[];
+    const setsWithStyle = sets.map((s) => ({
+      ...s,
+      style: styleAt(setStyles, styleWeekIndex, s.setNumber),
+    }));
     // #60: the Log page banner's eligibility check — same rule
     // acceptWaveRpeDeloadSuggestion re-verifies server-side before actually
     // accepting, so a stale render here can only under- or over-show the
@@ -73,7 +93,7 @@ export default async function LogPage() {
       exerciseInDayId: ex.id,
       exerciseName: ex.exercise.name,
       schemeType: ex.schemeType,
-      sets,
+      sets: setsWithStyle,
       needsTrainingMax,
       suggestDeload,
       // #57: Rep Accumulation's per-set label already shows "weight×—" (no
