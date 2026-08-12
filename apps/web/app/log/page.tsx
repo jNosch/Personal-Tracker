@@ -4,6 +4,7 @@ import { db } from "../../db/client";
 import { dayTemplates, exerciseInDay, programs } from "../../db/schema";
 import {
   prescribe,
+  rpeDeloadEligibleForScheme,
   type SchemeConfig,
   type WaveState,
 } from "../../lib/schemes";
@@ -81,14 +82,17 @@ export default async function LogPage() {
       ...s,
       style: styleAt(setStyles, styleWeekIndex, s.setNumber),
     }));
-    // #60: the Log page banner's eligibility check — same rule
-    // acceptWaveRpeDeloadSuggestion re-verifies server-side before actually
-    // accepting, so a stale render here can only under- or over-show the
-    // banner for one page load, never mis-write state.
-    const suggestDeload =
-      scheme.type === "wave" &&
-      !waveState!.inDeload &&
-      (waveState!.redStreak ?? 0) >= 3;
+    // #60/#61: the Log page banner's eligibility check for every scheme
+    // that has one — each scheme's own acceptXRpeDeloadSuggestion action
+    // re-verifies via the same rule before actually accepting, so a stale
+    // render here can only under- or over-show the banner for one page
+    // load, never mis-write state. Rep Accumulation/Failure Sets have no
+    // equivalent (#61's own out-of-scope list) and fall through to false
+    // inside rpeDeloadEligibleForScheme.
+    const suggestDeload = rpeDeloadEligibleForScheme(
+      scheme.type,
+      ex.schemeState,
+    );
     return {
       exerciseInDayId: ex.id,
       exerciseName: ex.exercise.name,

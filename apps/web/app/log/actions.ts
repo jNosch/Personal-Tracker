@@ -26,12 +26,17 @@ import {
 } from "../../lib/oneRm";
 import { nextDayPosition } from "../../lib/rotation";
 import {
+  acceptDoubleProgressionDeloadSuggestion,
   acceptRpeDeloadSuggestion,
+  acceptTopsetBackoffDeloadSuggestion,
+  isRpeDeloadEligible,
   prescribe,
   roundToNearest,
   update,
+  type DoubleProgressionState,
   type LoggedSetInput,
   type SchemeConfig,
+  type TopsetBackoffState,
   type WaveState,
 } from "../../lib/schemes";
 
@@ -229,12 +234,52 @@ export async function acceptWaveRpeDeloadSuggestion(exerciseInDayId: string) {
   if (!row || row.schemeType !== "wave") return;
 
   const state = row.schemeState as WaveState;
-  const eligible = (state.redStreak ?? 0) >= 3 && !state.inDeload;
-  if (!eligible) return;
+  if (!isRpeDeloadEligible(state.redStreak, state.inDeload)) return;
 
   await db
     .update(exerciseInDay)
     .set({ schemeState: acceptRpeDeloadSuggestion(state) })
+    .where(eq(exerciseInDay.id, exerciseInDayId));
+  revalidatePath("/log");
+}
+
+// #61: same Accept-button shape as Wave's own action above, for Double
+// Progression — deloadPending is this scheme's "already mid-deload, don't
+// re-offer" equivalent of Wave's inDeload.
+export async function acceptDoubleProgressionRpeDeloadSuggestion(
+  exerciseInDayId: string,
+) {
+  const row = await db.query.exerciseInDay.findFirst({
+    where: eq(exerciseInDay.id, exerciseInDayId),
+  });
+  if (!row || row.schemeType !== "double_progression") return;
+
+  const state = row.schemeState as DoubleProgressionState;
+  if (!isRpeDeloadEligible(state.redStreak, state.deloadPending)) return;
+
+  await db
+    .update(exerciseInDay)
+    .set({ schemeState: acceptDoubleProgressionDeloadSuggestion(state) })
+    .where(eq(exerciseInDay.id, exerciseInDayId));
+  revalidatePath("/log");
+}
+
+// #61: Top-set+Backoff's own Accept action — same shape/eligibility rule
+// as Double Progression's above.
+export async function acceptTopsetBackoffRpeDeloadSuggestion(
+  exerciseInDayId: string,
+) {
+  const row = await db.query.exerciseInDay.findFirst({
+    where: eq(exerciseInDay.id, exerciseInDayId),
+  });
+  if (!row || row.schemeType !== "topset_backoff") return;
+
+  const state = row.schemeState as TopsetBackoffState;
+  if (!isRpeDeloadEligible(state.redStreak, state.deloadPending)) return;
+
+  await db
+    .update(exerciseInDay)
+    .set({ schemeState: acceptTopsetBackoffDeloadSuggestion(state) })
     .where(eq(exerciseInDay.id, exerciseInDayId));
   revalidatePath("/log");
 }

@@ -154,19 +154,22 @@ export interface ExerciseRpeTrend {
 // reading this function's output, since updateWave only ever sees one
 // session at a time and already has the config it needs.
 //
-// #60: for a Wave-scheme session, the session's point is that session's
-// countsTowardRpeSignal-flagged reading (AMRAP set, else the heaviest main
-// set — stamped at log time by prescribeWave) rather than an average of
-// every logged set — supplemental (BBB/FSL/SSL/custom) sets would otherwise
-// dilute a brutal main-set week with easy backoff volume. A Wave session
-// with no flagged reading (every set logging RPE that session happens not to
-// include the designated one — pre-#60 historic rows are backfilled by
-// migration 0002, see that file's comment, so they're not the reason a
-// session would land here) contributes no point at all, rather than
-// silently falling back to the old flat average — a reading under this
-// box's "AMRAP or heaviest" heading should mean what it says.
-// Every other scheme keeps the original flat all-sets-that-session average
-// until its own ticket defines a "set that counts" (see #61).
+// #60/#61: for a Wave or Top-set+Backoff session, the session's point is
+// that session's countsTowardRpeSignal-flagged reading (Wave: AMRAP set,
+// else the heaviest main set, stamped by prescribeWave; Top-set+Backoff:
+// the top set, always, stamped by prescribeTopsetBackoff) rather than an
+// average of every logged set — supplemental/back-off sets would otherwise
+// dilute a brutal main/top set with easy accessory volume. A session with
+// no flagged reading (every set logging RPE that session happens not to
+// include the designated one — pre-#60/#61 historic rows are backfilled by
+// migrations 0002/0005, see those files' comments, so they're not the
+// reason a session would land here) contributes no point at all, rather
+// than silently falling back to the old flat average — a reading under
+// this box's "the set that counts" heading should mean what it says.
+// Double Progression and Rep Accumulation keep the original flat
+// all-sets-that-session average (#61 resolved Double Progression's own
+// signal as that same flat average, so there's nothing to switch there;
+// Rep Accumulation and Failure Sets remain out of #61's scope entirely).
 export function recentExerciseRpeTrends(
   readings: RpeReading[],
   limit: number,
@@ -210,8 +213,10 @@ export function recentExerciseRpeTrends(
     { exerciseName: string; points: RpeTrendPoint[] }
   >();
   for (const s of bySessionExercise.values()) {
-    const source = s.schemeType === "wave" ? s.signalValues : s.values;
-    if (source.length === 0) continue; // wave session, nothing flagged yet
+    const usesSignalSet =
+      s.schemeType === "wave" || s.schemeType === "topset_backoff";
+    const source = usesSignalSet ? s.signalValues : s.values;
+    if (source.length === 0) continue; // signal-scheme session, nothing flagged
     const avgRpe =
       Math.round((source.reduce((sum, v) => sum + v, 0) / source.length) * 10) /
       10;

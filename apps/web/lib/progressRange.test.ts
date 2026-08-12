@@ -404,6 +404,92 @@ describe("recentExerciseRpeTrends: wave scheme", () => {
   });
 });
 
+// #61: same signal-set treatment as Wave, above — the top set only,
+// ignoring back-off sets logged the same session.
+describe("recentExerciseRpeTrends: topset_backoff scheme", () => {
+  it("uses only the countsTowardRpeSignal-flagged (top set) reading, ignoring back-off sets logged the same session", () => {
+    const readings: RpeReading[] = [
+      {
+        sessionId: "s1",
+        date: "2026-06-01",
+        exerciseId: "bench",
+        exerciseName: "Bench",
+        schemeType: "topset_backoff",
+        rpe: 9,
+        countsTowardRpeSignal: true,
+      },
+      // Easier back-off set logged the same session, unflagged — averaging
+      // this in would have pulled the old flat-average result well below 9.
+      {
+        sessionId: "s1",
+        date: "2026-06-01",
+        exerciseId: "bench",
+        exerciseName: "Bench",
+        schemeType: "topset_backoff",
+        rpe: 5,
+        countsTowardRpeSignal: false,
+      },
+    ];
+    const bench = recentExerciseRpeTrends(readings, 5).find(
+      (e) => e.exerciseId === "bench",
+    )!;
+    expect(bench.readings).toEqual([
+      { sessionId: "s1", date: "2026-06-01", avgRpe: 9 },
+    ]);
+  });
+
+  it("emits no point for a topset_backoff session with no flagged reading, rather than falling back to the flat average", () => {
+    const readings: RpeReading[] = [
+      {
+        sessionId: "s1",
+        date: "2026-06-01",
+        exerciseId: "bench",
+        exerciseName: "Bench",
+        schemeType: "topset_backoff",
+        rpe: 6,
+        countsTowardRpeSignal: false,
+      },
+    ];
+    const bench = recentExerciseRpeTrends(readings, 5).find(
+      (e) => e.exerciseId === "bench",
+    );
+    expect(bench).toBeUndefined();
+  });
+});
+
+// #61: Double Progression's own signal (a flat all-sets average) is
+// already what this function does by default for any scheme it doesn't
+// special-case — nothing to switch, confirmed here so a future change to
+// the default path doesn't silently break this scheme's RpeBox reading.
+describe("recentExerciseRpeTrends: double_progression scheme (unchanged flat average)", () => {
+  it("averages every logged set regardless of countsTowardRpeSignal", () => {
+    const readings: RpeReading[] = [
+      {
+        sessionId: "s1",
+        date: "2026-06-01",
+        exerciseId: "row",
+        exerciseName: "Row",
+        schemeType: "double_progression",
+        rpe: 8,
+        countsTowardRpeSignal: false,
+      },
+      {
+        sessionId: "s1",
+        date: "2026-06-01",
+        exerciseId: "row",
+        exerciseName: "Row",
+        schemeType: "double_progression",
+        rpe: 6,
+        countsTowardRpeSignal: false,
+      },
+    ];
+    const row = recentExerciseRpeTrends(readings, 5).find(
+      (e) => e.exerciseId === "row",
+    )!;
+    expect(row.readings[0]?.avgRpe).toBe(7);
+  });
+});
+
 describe("mondayTicks", () => {
   it("returns every Monday spanning a multi-week range", () => {
     // 2026-08-03 is a Monday.

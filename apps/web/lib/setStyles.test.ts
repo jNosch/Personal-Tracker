@@ -22,6 +22,7 @@ describe("validSetStylePositions", () => {
         repRangeHigh: 12,
         setCount: 3,
         weightIncrement: 2.5,
+        deloadCutPercentage: 60,
       },
     };
     expect(validSetStylePositions(scheme)).toEqual([
@@ -54,6 +55,7 @@ describe("validSetStylePositions", () => {
         backoffPercentage: 85,
         backoffSetCount: 2,
         backoffRepTarget: 5,
+        deloadCutPercentage: 60,
       },
     };
     expect(validSetStylePositions(scheme)).toEqual([
@@ -115,6 +117,7 @@ describe("pruneSetStyles", () => {
         repRangeHigh: 12,
         setCount: 2,
         weightIncrement: 2.5,
+        deloadCutPercentage: 60,
       },
     };
     const stored: SetStyleEntry[] = [

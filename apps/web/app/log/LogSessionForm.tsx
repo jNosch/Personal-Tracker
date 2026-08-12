@@ -17,10 +17,25 @@ import {
 import type { PrescribedSet } from "../../lib/schemes";
 import type { SetStyle } from "../../lib/setStyles";
 import {
+  acceptDoubleProgressionRpeDeloadSuggestion,
+  acceptTopsetBackoffRpeDeloadSuggestion,
   acceptWaveRpeDeloadSuggestion,
   logSession,
   setTrainingMax,
 } from "./actions";
+
+// #61: which scheme's own accept action RpeDeloadBanner should call for a
+// given exercise — one small lookup rather than a switch repeated at every
+// render site that needs it (there's exactly one: the banner's own
+// invocation below).
+const ACCEPT_DELOAD_ACTION_BY_SCHEME: Record<
+  string,
+  (exerciseInDayId: string) => Promise<void>
+> = {
+  wave: acceptWaveRpeDeloadSuggestion,
+  double_progression: acceptDoubleProgressionRpeDeloadSuggestion,
+  topset_backoff: acceptTopsetBackoffRpeDeloadSuggestion,
+};
 
 // #66: PrescribedSet itself stays untouched (style tags never reach the
 // scheme engine, see setStyles.ts's file-header comment) — this is a
@@ -214,6 +229,7 @@ export default function LogSessionForm({
               <RpeDeloadBanner
                 exerciseInDayId={ex.exerciseInDayId}
                 exerciseName={ex.exerciseName}
+                onAcceptAction={ACCEPT_DELOAD_ACTION_BY_SCHEME[ex.schemeType]!}
                 onAccept={() => router.refresh()}
               />
             )}
@@ -432,20 +448,25 @@ function TrainingMaxPrompt({
   );
 }
 
-// #60: 3+ consecutive red (RPE >= 9 on the AMRAP-or-heaviest set) weeks on
-// this Wave exercise — a suggestion, not an automatic deload. Sits above
-// the exercise's normal sets rather than replacing them: declining costs
-// nothing, the cycle just continues as prescribed below. Accept flips
-// inDeload server-side (acceptWaveRpeDeloadSuggestion) so the *next*
-// prescribe() for this exercise returns the deload week — this session's
-// already-rendered sets are unaffected either way.
+// #60/#61: 3+ consecutive red weeks on this exercise's own signal set — a
+// suggestion, not an automatic deload. Sits above the exercise's normal
+// sets rather than replacing them: declining costs nothing, the cycle just
+// continues as prescribed below. Scheme-agnostic — the caller passes
+// whichever scheme's own acceptXRpeDeloadSuggestion server action applies
+// (Wave, Double Progression, or Top-set+Backoff, see #61) so this
+// component doesn't need to know which scheme it's rendering for. Accept
+// flips the scheme's own "deloading now" state server-side so the *next*
+// prescribe() for this exercise returns the reduced session — this
+// session's already-rendered sets are unaffected either way.
 function RpeDeloadBanner({
   exerciseInDayId,
   exerciseName,
+  onAcceptAction,
   onAccept,
 }: {
   exerciseInDayId: string;
   exerciseName: string;
+  onAcceptAction: (exerciseInDayId: string) => Promise<void>;
   onAccept: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
@@ -470,7 +491,7 @@ function RpeDeloadBanner({
         disabled={isPending}
         onClick={() =>
           startTransition(async () => {
-            await acceptWaveRpeDeloadSuggestion(exerciseInDayId);
+            await onAcceptAction(exerciseInDayId);
             onAccept();
           })
         }

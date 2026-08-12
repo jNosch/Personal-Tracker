@@ -4,19 +4,23 @@
 // what makes that guarantee real at the call sites in app/programs/actions.ts.
 import { describe, expect, it } from "vitest";
 import {
+  acceptDoubleProgressionDeloadSuggestion,
   acceptRpeDeloadSuggestion,
+  acceptTopsetBackoffDeloadSuggestion,
   defaultConfigFor,
   epley1Rm,
   pickWaveSignalSetNumber,
   PRESET_5_3_1_WEEK_TABLE,
   prescribe,
   SCHEME_CATALOG,
+  rpeDeloadEligibleForScheme,
   update,
   type DoubleProgressionConfig,
   type FailureSetsConfig,
   type LoggedSetInput,
   type RepAccumulationConfig,
   type TopsetBackoffConfig,
+  type TopsetBackoffState,
   type WaveConfig,
   type WaveState,
 } from "./schemes";
@@ -30,6 +34,7 @@ describe("defaultConfigFor", () => {
         repRangeHigh: 12,
         setCount: 3,
         weightIncrement: 2.5,
+        deloadCutPercentage: 60,
       },
     });
   });
@@ -62,6 +67,7 @@ describe("defaultConfigFor", () => {
         backoffPercentage: 85,
         backoffSetCount: 3,
         backoffRepTarget: 5,
+        deloadCutPercentage: 60,
       },
     });
   });
@@ -108,6 +114,7 @@ describe("prescribe/update: double_progression", () => {
     repRangeHigh: 12,
     setCount: 3,
     weightIncrement: 2.5,
+    deloadCutPercentage: 60,
   };
   const scheme = { type: "double_progression" as const, config };
 
@@ -145,6 +152,7 @@ describe("prescribe/update: double_progression", () => {
     expect(update(scheme, {}, sets)).toEqual({
       currentWeightKg: 60,
       currentRepTarget: 8,
+      redStreak: 0,
     });
   });
 
@@ -158,6 +166,7 @@ describe("prescribe/update: double_progression", () => {
     expect(update(scheme, state, sets)).toEqual({
       currentWeightKg: 60,
       currentRepTarget: 9,
+      redStreak: 0,
     });
   });
 
@@ -171,6 +180,7 @@ describe("prescribe/update: double_progression", () => {
     expect(update(scheme, state, sets)).toEqual({
       currentWeightKg: 62.5,
       currentRepTarget: 8,
+      redStreak: 0,
     });
   });
 
@@ -181,7 +191,106 @@ describe("prescribe/update: double_progression", () => {
       { setNumber: 2, repsAchieved: 7, actualWeightKg: 60, rpe: null },
       { setNumber: 3, repsAchieved: 8, actualWeightKg: 60, rpe: null },
     ];
-    expect(update(scheme, state, sets)).toEqual(state);
+    expect(update(scheme, state, sets)).toEqual({ ...state, redStreak: 0 });
+  });
+});
+
+// #61: RPE-triggered deload suggestion for Double Progression.
+describe("prescribe/update: double_progression RPE deload (#61)", () => {
+  const config: DoubleProgressionConfig = {
+    repRangeLow: 8,
+    repRangeHigh: 12,
+    setCount: 3,
+    weightIncrement: 2.5,
+    deloadCutPercentage: 60,
+  };
+  const scheme = { type: "double_progression" as const, config };
+
+  function setsAt(rpe: number | null, repsAchieved = 8): LoggedSetInput[] {
+    return [1, 2, 3].map((setNumber) => ({
+      setNumber,
+      repsAchieved,
+      actualWeightKg: 60,
+      rpe,
+    }));
+  }
+
+  it("increments redStreak when every set's RPE is at/above the threshold", () => {
+    const state = { currentWeightKg: 60, currentRepTarget: 8, redStreak: 2 };
+    expect(update(scheme, state, setsAt(9))).toEqual({
+      currentWeightKg: 60,
+      currentRepTarget: 9,
+      redStreak: 3,
+    });
+  });
+
+  it("resets redStreak to 0 when the average RPE is below the threshold", () => {
+    const state = { currentWeightKg: 60, currentRepTarget: 8, redStreak: 2 };
+    expect(update(scheme, state, setsAt(6))).toEqual({
+      currentWeightKg: 60,
+      currentRepTarget: 9,
+      redStreak: 0,
+    });
+  });
+
+  it("resets redStreak to 0 when any set is missing RPE, not a partial average", () => {
+    const state = { currentWeightKg: 60, currentRepTarget: 8, redStreak: 2 };
+    const sets: LoggedSetInput[] = [
+      { setNumber: 1, repsAchieved: 8, actualWeightKg: 60, rpe: 9.5 },
+      { setNumber: 2, repsAchieved: 8, actualWeightKg: 60, rpe: 9.5 },
+      { setNumber: 3, repsAchieved: 8, actualWeightKg: 60, rpe: null }, // missing
+    ];
+    expect(update(scheme, state, sets)).toEqual({
+      currentWeightKg: 60,
+      currentRepTarget: 9,
+      redStreak: 0,
+    });
+  });
+
+  it("prescribes the cut weight for exactly one session once deloadPending is set", () => {
+    const sets = prescribe(scheme, {
+      currentWeightKg: 100,
+      currentRepTarget: 8,
+      deloadPending: true,
+    });
+    expect(sets.every((s) => s.prescribedWeightKg === 60)).toBe(true); // 60% of 100
+    expect(sets.every((s) => s.repTarget === 8)).toBe(true); // reps untouched
+  });
+
+  it("prescribes the untouched weight once deloadPending is false/absent", () => {
+    const sets = prescribe(scheme, {
+      currentWeightKg: 100,
+      currentRepTarget: 8,
+    });
+    expect(sets.every((s) => s.prescribedWeightKg === 100)).toBe(true);
+  });
+
+  it("ignores the deload session's actual performance entirely, clears deloadPending, resets redStreak", () => {
+    const state = {
+      currentWeightKg: 100,
+      currentRepTarget: 8,
+      deloadPending: true,
+      redStreak: 3,
+    };
+    // Even a blowout session (way past target) doesn't climb — the deload
+    // session is a no-op for progression purposes.
+    const sets = setsAt(9.5, 20);
+    expect(update(scheme, state, sets)).toEqual({
+      currentWeightKg: 100,
+      currentRepTarget: 8,
+      deloadPending: false,
+      redStreak: 0,
+    });
+  });
+
+  it("acceptDoubleProgressionDeloadSuggestion sets deloadPending and resets redStreak, leaves weight/reps untouched", () => {
+    const state = { currentWeightKg: 100, currentRepTarget: 8, redStreak: 3 };
+    expect(acceptDoubleProgressionDeloadSuggestion(state)).toEqual({
+      currentWeightKg: 100,
+      currentRepTarget: 8,
+      deloadPending: true,
+      redStreak: 0,
+    });
   });
 });
 
@@ -234,10 +343,11 @@ describe("prescribe/update: topset_backoff", () => {
     backoffPercentage: 80,
     backoffSetCount: 2,
     backoffRepTarget: 5,
+    deloadCutPercentage: 60,
   };
   const scheme = { type: "topset_backoff" as const, config };
 
-  it("prescribes the top set (designated) plus back-off sets derived from its prescribed weight", () => {
+  it("prescribes the top set (designated, and the RPE signal set) plus back-off sets derived from its prescribed weight", () => {
     const sets = prescribe(scheme, {
       currentWeightKg: 100,
       currentRepTarget: 1,
@@ -248,7 +358,7 @@ describe("prescribe/update: topset_backoff", () => {
         prescribedWeightKg: 100,
         repTarget: 1,
         countsTowardOneRm: true,
-        countsTowardRpeSignal: false,
+        countsTowardRpeSignal: true,
       },
       {
         setNumber: 2,
@@ -276,6 +386,7 @@ describe("prescribe/update: topset_backoff", () => {
     expect(update(scheme, state, sets)).toEqual({
       currentWeightKg: 100,
       currentRepTarget: 2,
+      redStreak: 0,
     });
   });
 
@@ -287,7 +398,143 @@ describe("prescribe/update: topset_backoff", () => {
     expect(update(scheme, state, sets)).toEqual({
       currentWeightKg: 102.5,
       currentRepTarget: 1,
+      redStreak: 0,
     });
+  });
+});
+
+// #61: RPE-triggered deload suggestion for Top-set+Backoff.
+describe("prescribe/update: topset_backoff RPE deload (#61)", () => {
+  const config: TopsetBackoffConfig = {
+    topSetRepRangeLow: 1,
+    topSetRepRangeHigh: 3,
+    weightIncrement: 2.5,
+    backoffPercentage: 80,
+    backoffSetCount: 2,
+    backoffRepTarget: 5,
+    deloadCutPercentage: 60,
+  };
+  const scheme = { type: "topset_backoff" as const, config };
+
+  it("increments redStreak when the top set's RPE is at/above the threshold", () => {
+    const state = { currentWeightKg: 100, currentRepTarget: 1, redStreak: 2 };
+    const sets: LoggedSetInput[] = [
+      { setNumber: 1, repsAchieved: 1, actualWeightKg: 100, rpe: 9.5 },
+    ];
+    const result = update(scheme, state, sets) as TopsetBackoffState;
+    expect(result.redStreak).toBe(3);
+  });
+
+  it("resets redStreak when the top set's RPE is below the threshold, regardless of back-off RPE", () => {
+    const state = { currentWeightKg: 100, currentRepTarget: 1, redStreak: 2 };
+    const sets: LoggedSetInput[] = [
+      { setNumber: 1, repsAchieved: 1, actualWeightKg: 100, rpe: 6 },
+      // Even a brutal back-off set doesn't count — top set only (#61).
+      { setNumber: 2, repsAchieved: 5, actualWeightKg: 80, rpe: 9.8 },
+    ];
+    const result = update(scheme, state, sets) as TopsetBackoffState;
+    expect(result.redStreak).toBe(0);
+  });
+
+  it("resets redStreak when the top set is missing RPE", () => {
+    const state = { currentWeightKg: 100, currentRepTarget: 1, redStreak: 2 };
+    const sets: LoggedSetInput[] = [
+      { setNumber: 1, repsAchieved: 1, actualWeightKg: 100, rpe: null },
+    ];
+    const result = update(scheme, state, sets) as TopsetBackoffState;
+    expect(result.redStreak).toBe(0);
+  });
+
+  it("prescribes the cut weight for exactly one session once deloadPending is set, scaling back-off sets too", () => {
+    const sets = prescribe(scheme, {
+      currentWeightKg: 100,
+      currentRepTarget: 1,
+      deloadPending: true,
+    });
+    // Top set: 60% of 100 = 60. Back-off: 80% of the *cut* 60 = 48, not 80.
+    expect(sets[0]!.prescribedWeightKg).toBe(60);
+    expect(sets[1]!.prescribedWeightKg).toBe(48);
+    expect(sets[2]!.prescribedWeightKg).toBe(48);
+    expect(sets[0]!.repTarget).toBe(1); // reps untouched
+  });
+
+  it("ignores the deload session's actual performance entirely, clears deloadPending, resets redStreak", () => {
+    const state = {
+      currentWeightKg: 100,
+      currentRepTarget: 1,
+      deloadPending: true,
+      redStreak: 3,
+    };
+    const sets: LoggedSetInput[] = [
+      { setNumber: 1, repsAchieved: 5, actualWeightKg: 60, rpe: 9.8 }, // blowout, still no-op
+    ];
+    expect(update(scheme, state, sets)).toEqual({
+      currentWeightKg: 100,
+      currentRepTarget: 1,
+      deloadPending: false,
+      redStreak: 0,
+    });
+  });
+
+  it("acceptTopsetBackoffDeloadSuggestion sets deloadPending and resets redStreak, leaves weight/reps untouched", () => {
+    const state = { currentWeightKg: 100, currentRepTarget: 1, redStreak: 3 };
+    expect(acceptTopsetBackoffDeloadSuggestion(state)).toEqual({
+      currentWeightKg: 100,
+      currentRepTarget: 1,
+      deloadPending: true,
+      redStreak: 0,
+    });
+  });
+});
+
+// #61: the shared scheme-type dispatch wrapper around isRpeDeloadEligible
+// — every caller (Log page, Progress page) should be able to call this one
+// function instead of switching on scheme.type and casting state
+// themselves (the duplication code review caught even after
+// isRpeDeloadEligible existed).
+describe("rpeDeloadEligibleForScheme", () => {
+  it("wave: reads inDeload as the 'already deloading' flag", () => {
+    expect(
+      rpeDeloadEligibleForScheme("wave", { redStreak: 3, inDeload: false }),
+    ).toBe(true);
+    expect(
+      rpeDeloadEligibleForScheme("wave", { redStreak: 3, inDeload: true }),
+    ).toBe(false);
+  });
+
+  it("double_progression: reads deloadPending as the 'already deloading' flag", () => {
+    expect(
+      rpeDeloadEligibleForScheme("double_progression", {
+        redStreak: 3,
+        deloadPending: false,
+      }),
+    ).toBe(true);
+    expect(
+      rpeDeloadEligibleForScheme("double_progression", {
+        redStreak: 3,
+        deloadPending: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("topset_backoff: reads deloadPending as the 'already deloading' flag", () => {
+    expect(
+      rpeDeloadEligibleForScheme("topset_backoff", {
+        redStreak: 3,
+        deloadPending: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("returns false below the redStreak threshold, for any eligible scheme", () => {
+    expect(
+      rpeDeloadEligibleForScheme("wave", { redStreak: 2, inDeload: false }),
+    ).toBe(false);
+  });
+
+  it("returns false for schemes with no deload concept (rep_accumulation, failure_sets)", () => {
+    expect(rpeDeloadEligibleForScheme("rep_accumulation", {})).toBe(false);
+    expect(rpeDeloadEligibleForScheme("failure_sets", {})).toBe(false);
   });
 });
 

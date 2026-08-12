@@ -15,7 +15,7 @@ import {
   recentExerciseRpeTrends,
   type SeriesPoint,
 } from "../../lib/progressRange";
-import type { WaveState } from "../../lib/schemes";
+import { rpeDeloadEligibleForScheme } from "../../lib/schemes";
 
 // #56: how many of its own most recent RPE-logged sessions the recent-RPE
 // box shows per exercise (not "last N sessions of the program" — see
@@ -163,19 +163,19 @@ export default async function ProgressPage() {
       )
     : [];
 
-  // #60: small passive flag on RpeBox's Wave rows — same redStreak >= 3 &&
-  // !inDeload eligibility the Log page banner uses, just read-only here
-  // (the Accept button lives only on the Log page, see that ticket's
-  // resolved spec). Scoped to the active program's own exercises, matching
-  // recentRpe's scoping above.
+  // #60/#61: small passive flag on RpeBox's Wave/Double Progression/
+  // Top-set+Backoff rows — same eligibility rule the Log page banner uses,
+  // just read-only here (the Accept button lives only on the Log page, see
+  // #60's resolved spec). Scoped to the active program's own exercises,
+  // matching recentRpe's scoping above. Rep Accumulation/Failure Sets have
+  // no equivalent (#61's own out-of-scope list) and fall through to false
+  // inside rpeDeloadEligibleForScheme.
   const suggestDeloadExerciseIds = activeProgram
     ? activeProgram.dayTemplates
         .flatMap((d) => d.exercises)
-        .filter((ex) => {
-          if (ex.schemeType !== "wave") return false;
-          const state = ex.schemeState as WaveState;
-          return (state.redStreak ?? 0) >= 3 && !state.inDeload;
-        })
+        .filter((ex) =>
+          rpeDeloadEligibleForScheme(ex.schemeType, ex.schemeState),
+        )
         .map((ex) => ex.exerciseId)
     : [];
 

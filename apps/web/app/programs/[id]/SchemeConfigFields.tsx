@@ -152,6 +152,17 @@ export default function SchemeConfigFields({
           <span style={labelStyle}>Weight increment (kg)</span>
           {numInput(c.weightIncrement, (v) => set({ weightIncrement: v }))}
         </div>
+        <div style={field}>
+          <span style={labelStyle}>
+            RPE-deload cut %{" "}
+            <span style={{ color: "#bbb" }}>
+              (#61 — one session after 3 red weeks)
+            </span>
+          </span>
+          {numInput(c.deloadCutPercentage, (v) =>
+            set({ deloadCutPercentage: v }),
+          )}
+        </div>
         <SetStyleRow
           scheme={scheme}
           setStyles={setStyles}
@@ -226,6 +237,17 @@ export default function SchemeConfigFields({
         <div style={field}>
           <span style={labelStyle}>Rep target</span>
           {numInput(c.backoffRepTarget, (v) => set({ backoffRepTarget: v }))}
+        </div>
+        <div style={{ ...field, borderTop: "1px solid #eee", paddingTop: 8 }}>
+          <span style={labelStyle}>
+            RPE-deload cut %{" "}
+            <span style={{ color: "#bbb" }}>
+              (#61 — one session after 3 red weeks)
+            </span>
+          </span>
+          {numInput(c.deloadCutPercentage, (v) =>
+            set({ deloadCutPercentage: v }),
+          )}
         </div>
         <SetStyleRow
           scheme={scheme}
