@@ -134,7 +134,9 @@ function EmptyState({ message, href }: { message: string; href?: string }) {
         margin: "0 auto",
       }}
     >
-      <p style={{ color: "#999", fontSize: 14, marginBottom: 12 }}>{message}</p>
+      <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 12 }}>
+        {message}
+      </p>
       <Link
         href={href ?? "/programs"}
         style={{ fontSize: 14, fontWeight: 600 }}

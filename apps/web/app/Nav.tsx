@@ -7,6 +7,7 @@
 // itself, which redirects to `/progress` (see page.tsx).
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import ThemeToggle from "./ThemeToggle";
 
 // Usage-frequency order, not alphabetical: Progress is the landing page,
 // Log is the most frequent action, Bodyweight frequent but quick, Programs
@@ -32,34 +33,48 @@ export default function Nav() {
         left: 0,
         right: 0,
         height: NAV_HEIGHT,
-        display: "flex",
+        display: "grid",
+        // Center column holds the links; the toggle sits right-aligned in
+        // its own column, with a matching empty spacer on the left so the
+        // links stay visually centered (#32).
+        gridTemplateColumns: "1fr auto 1fr",
         alignItems: "center",
-        justifyContent: "center",
-        gap: 32,
-        borderTop: "1px solid #e5e5e5",
-        background: "#fff",
+        borderTop: "1px solid var(--border)",
+        background: "var(--surface)",
         fontFamily: "sans-serif",
       }}
     >
-      {LINKS.map((link) => {
-        const active = pathname === link.href;
-        return (
-          <Link
-            key={link.href}
-            href={link.href}
-            style={{
-              fontSize: 14,
-              textDecoration: "none",
-              // Subtle — deliberately not the bold filled-background style
-              // the Progress page's range tabs use.
-              color: active ? "#111" : "#999",
-              fontWeight: active ? 600 : 400,
-            }}
-          >
-            {link.label}
-          </Link>
-        );
-      })}
+      <span />
+      <div style={{ display: "flex", justifyContent: "center", gap: 32 }}>
+        {LINKS.map((link) => {
+          const active = pathname === link.href;
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              style={{
+                fontSize: 14,
+                textDecoration: "none",
+                // Subtle — deliberately not the bold filled-background style
+                // the Progress page's range tabs use.
+                color: active ? "var(--text)" : "var(--text-muted)",
+                fontWeight: active ? 600 : 400,
+              }}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          paddingRight: 16,
+        }}
+      >
+        <ThemeToggle />
+      </div>
     </nav>
   );
 }

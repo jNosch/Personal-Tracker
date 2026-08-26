@@ -13,6 +13,10 @@
 /.next/
 /out/
 
+# generated at build time (#32) — see scripts/generate-theme-css.ts
+/app/theme-vars.css
+/app/theme-manifest.ts
+
 # production
 /build
 

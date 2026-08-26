@@ -1,6 +1,6 @@
-// Programs list (#24). No design system exists yet (theming lands separately
-// in #32) — plain inline styles, matching the prototype/program-builder
-// reference rather than inventing one here.
+// Programs list (#24). Plain inline styles, matching the prototype/program-
+// builder reference rather than inventing a new pattern here — colors now
+// reference theme roles (#32) instead of hardcoded hex.
 import { asc, desc } from "drizzle-orm";
 import Link from "next/link";
 import { db } from "../../db/client";
@@ -50,7 +50,9 @@ export default async function ProgramsPage() {
       </div>
 
       {allPrograms.length === 0 ? (
-        <p style={{ color: "#999", fontSize: 14 }}>No programs yet.</p>
+        <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+          No programs yet.
+        </p>
       ) : (
         <ul style={{ listStyle: "none" }}>
           {allPrograms.map((program) => (
@@ -62,7 +64,7 @@ export default async function ProgramsPage() {
                   justifyContent: "space-between",
                   alignItems: "center",
                   padding: "10px 14px",
-                  border: "1px solid #e5e5e5",
+                  border: "1px solid var(--border)",
                   borderRadius: 8,
                   opacity: program.isArchived ? 0.5 : 1,
                   fontSize: 14,
@@ -70,7 +72,13 @@ export default async function ProgramsPage() {
                 }}
               >
                 <span>{program.name}</span>
-                <span style={{ fontSize: 12, color: "#999", fontWeight: 400 }}>
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    fontWeight: 400,
+                  }}
+                >
                   {program.isActive
                     ? "active"
                     : program.isArchived
@@ -91,7 +99,7 @@ const btnStyle = {
   fontSize: 12,
   borderRadius: 5,
   border: "none",
-  background: "#111",
-  color: "#fff",
+  background: "var(--accent)",
+  color: "var(--background)",
   cursor: "pointer",
 };
