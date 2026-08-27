@@ -11,6 +11,7 @@
     "start": "next start",
     "generate:theme-css": "tsx scripts/generate-theme-css.ts",
     "lint": "eslint --max-warnings 0",
+    "precheck-types": "tsx scripts/generate-theme-css.ts",
     "check-types": "next typegen && tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

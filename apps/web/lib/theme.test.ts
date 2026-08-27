@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   generateCss,
   generateManifest,
+  validateTheme,
   type Theme,
-} from "./generate-theme-css";
+} from "./theme";
 
 const black: Theme = {
   name: "black",
@@ -84,6 +85,24 @@ describe("generateManifest", () => {
     );
     expect(manifest).toContain(
       'export const DEFAULT_THEME: ThemeName = "black";',
+    );
+  });
+});
+
+describe("validateTheme", () => {
+  it("passes silently when every role is present", () => {
+    expect(() => validateTheme(black, "black.json")).not.toThrow();
+  });
+
+  it("throws naming the missing role(s) and the source file", () => {
+    const broken = {
+      name: "sunset",
+      roles: { ...black.roles, danger: "" as unknown as string },
+    } as Theme;
+    delete (broken.roles as Partial<Theme["roles"]>).danger;
+
+    expect(() => validateTheme(broken, "sunset.json")).toThrow(
+      /sunset.*sunset\.json.*danger/s,
     );
   });
 });
