@@ -39,6 +39,13 @@ export interface DoubleProgressionConfig {
   repRangeHigh: number;
   setCount: number;
   weightIncrement: number;
+  // #61: percentage of currentWeightKg served for the one session right
+  // after an RPE-deload suggestion is accepted (deloadPending, see
+  // DoubleProgressionState) — e.g. 60 = 60% of the tracked working weight
+  // for that single session. Real-world deloads resume unchanged
+  // afterward rather than permanently stepping down (see #61's resolved
+  // spec), so this never touches currentWeightKg itself.
+  deloadCutPercentage: number;
 }
 
 export interface RepAccumulationConfig {
@@ -54,6 +61,11 @@ export interface TopsetBackoffConfig {
   backoffPercentage: number;
   backoffSetCount: number;
   backoffRepTarget: number;
+  // #61: same meaning as DoubleProgressionConfig's own field — see its
+  // comment. Backoff sets aren't cut independently: they're already
+  // derived as a percentage of the top set's (possibly cut) weight, so
+  // cutting the top set alone scales the whole session down together.
+  deloadCutPercentage: number;
 }
 
 export interface FailureSetsConfig {
@@ -127,6 +139,7 @@ export function defaultConfigFor(type: SchemeType): SchemeConfig {
           repRangeHigh: 12,
           setCount: 3,
           weightIncrement: 2.5,
+          deloadCutPercentage: 60,
         },
       };
     case "wave":
@@ -155,6 +168,7 @@ export function defaultConfigFor(type: SchemeType): SchemeConfig {
           backoffPercentage: 85,
           backoffSetCount: 3,
           backoffRepTarget: 5,
+          deloadCutPercentage: 60,
         },
       };
     case "failure_sets":
@@ -174,7 +188,27 @@ export function defaultConfigFor(type: SchemeType): SchemeConfig {
 // via the setTrainingMax action in app/log/actions.ts, never inferred from
 // a logged set.
 
-export interface DoubleProgressionState {
+// #61: consecutive count of red (RPE >= HIGH_RPE_THRESHOLD on this scheme's
+// own "set that counts", see updateDoubleProgression/updateTopsetBackoff)
+// sessions just logged — same meaning/threshold as Wave's own redStreak
+// (#60), resets to 0 on a non-red or missing-RPE session, and whenever
+// deloadPending flips true (the only trigger here — unlike Wave there's no
+// automatic on_regression/always path, so redStreak resetting on accept is
+// the only reset-on-deload-start case that exists for these two schemes).
+// Reaching 3 doesn't deload anything by itself — see deloadPending.
+interface RedStreakState {
+  redStreak?: number;
+  // True for exactly one session: the one right after an RPE-deload
+  // suggestion is accepted. prescribe() serves a cut-percentage weight for
+  // that session (see deloadCutPercentage); update() then ignores whatever
+  // was actually logged that session entirely and clears this flag,
+  // resuming from the untouched pre-deload currentWeightKg/
+  // currentRepTarget — mirrors updateWave's own inDeload branch, which
+  // likewise never reads `sets` at all.
+  deloadPending?: boolean;
+}
+
+export interface DoubleProgressionState extends RedStreakState {
   currentWeightKg?: number;
   currentRepTarget?: number;
 }
@@ -183,7 +217,7 @@ export interface RepAccumulationState {
   currentWeightKg?: number;
 }
 
-export interface TopsetBackoffState {
+export interface TopsetBackoffState extends RedStreakState {
   currentWeightKg?: number;
   currentRepTarget?: number;
 }
@@ -265,7 +299,14 @@ function prescribeDoubleProgression(
   config: DoubleProgressionConfig,
   state: DoubleProgressionState,
 ): PrescribedSet[] {
-  const weight = state.currentWeightKg ?? 0;
+  const trackedWeight = state.currentWeightKg ?? 0;
+  // #61: a pending deload cuts weight only, for exactly one session —
+  // repTarget is untouched, and currentWeightKg itself (trackedWeight
+  // above) is never modified here; update()'s deloadPending branch
+  // restores prescribe()'s normal input unchanged on the very next call.
+  const weight = state.deloadPending
+    ? roundToNearest((config.deloadCutPercentage / 100) * trackedWeight, 0.5)
+    : trackedWeight;
   const repTarget = state.currentRepTarget ?? config.repRangeLow;
   return Array.from({ length: config.setCount }, (_, i) => ({
     setNumber: i + 1,
@@ -279,7 +320,7 @@ function prescribeDoubleProgression(
 // Every set hitting the current target climbs it by one; hitting it while
 // already at the range's top bumps weight and resets to the bottom.
 // Falling short (or an empty session) makes no change — retry identically
-// next time. No plateau/deload logic, by design (#8).
+// next time. No plateau/deload logic beyond #61's RPE-triggered one below.
 function updateDoubleProgression(
   config: DoubleProgressionConfig,
   state: DoubleProgressionState,
@@ -287,17 +328,70 @@ function updateDoubleProgression(
 ): DoubleProgressionState {
   const currentWeightKg = state.currentWeightKg ?? sets[0]?.actualWeightKg ?? 0;
   const currentRepTarget = state.currentRepTarget ?? config.repRangeLow;
+
+  // #61: the deload session just logged — ignore whatever was actually
+  // performed entirely (mirrors updateWave's own inDeload branch, which
+  // likewise never reads `sets`) and resume from the untouched pre-deload
+  // state, same as if this session hadn't happened for progression
+  // purposes.
+  if (state.deloadPending) {
+    return {
+      currentWeightKg,
+      currentRepTarget,
+      deloadPending: false,
+      redStreak: 0,
+    };
+  }
+
+  // #61: "the set that counts" for Double Progression is every set's
+  // average — its sets are structurally interchangeable (no designated
+  // top/AMRAP set the way Wave or Top-set+Backoff have), so there's no
+  // principled single set to elect. Any set missing RPE makes the whole
+  // session's read non-red rather than averaging just what's present
+  // (decided in chat: a partial average could tip red off 1 of 3 sets
+  // logging RPE once, which isn't "3 consecutive hard weeks").
+  const everySetHasRpe = sets.length > 0 && sets.every((s) => s.rpe !== null);
+  const avgRpe = everySetHasRpe
+    ? sets.reduce((sum, s) => sum + s.rpe!, 0) / sets.length
+    : null;
+  const isRed = avgRpe !== null && avgRpe >= HIGH_RPE_THRESHOLD;
+  const newRedStreak = isRed ? (state.redStreak ?? 0) + 1 : 0;
+
   const allHitTarget =
     sets.length > 0 &&
     sets.every((s) => (s.repsAchieved ?? 0) >= currentRepTarget);
-  if (!allHitTarget) return { currentWeightKg, currentRepTarget };
+  if (!allHitTarget) {
+    return { currentWeightKg, currentRepTarget, redStreak: newRedStreak };
+  }
   if (currentRepTarget >= config.repRangeHigh) {
     return {
       currentWeightKg: currentWeightKg + config.weightIncrement,
       currentRepTarget: config.repRangeLow,
+      redStreak: newRedStreak,
     };
   }
-  return { currentWeightKg, currentRepTarget: currentRepTarget + 1 };
+  return {
+    currentWeightKg,
+    currentRepTarget: currentRepTarget + 1,
+    redStreak: newRedStreak,
+  };
+}
+
+// #61: the Log page banner's Accept action for Double Progression — the
+// only thing that turns a redStreak >= 3 suggestion into a real deload.
+// Deliberately dumb/pure, same shape as Wave's acceptRpeDeloadSuggestion
+// (#60): no eligibility check here (the caller, app/log/actions.ts's
+// server action, re-reads current state and confirms redStreak >= 3
+// right before calling this).
+export function acceptDoubleProgressionDeloadSuggestion(
+  state: DoubleProgressionState,
+): DoubleProgressionState {
+  return {
+    currentWeightKg: state.currentWeightKg,
+    currentRepTarget: state.currentRepTarget,
+    deloadPending: true,
+    redStreak: 0,
+  };
 }
 
 // No individual per-set rep target — every set is "just perform a set at
@@ -340,7 +434,13 @@ function prescribeTopsetBackoff(
   config: TopsetBackoffConfig,
   state: TopsetBackoffState,
 ): PrescribedSet[] {
-  const weight = state.currentWeightKg ?? 0;
+  const trackedWeight = state.currentWeightKg ?? 0;
+  // #61: same one-session-only cut as Double Progression's own comment —
+  // backoff sets aren't cut independently below, they're derived from
+  // this (possibly cut) weight, so the whole session scales down together.
+  const weight = state.deloadPending
+    ? roundToNearest((config.deloadCutPercentage / 100) * trackedWeight, 0.5)
+    : trackedWeight;
   const repTarget = state.currentRepTarget ?? config.topSetRepRangeLow;
   const backoffWeight = roundToNearest(
     (config.backoffPercentage / 100) * weight,
@@ -351,7 +451,13 @@ function prescribeTopsetBackoff(
     prescribedWeightKg: weight,
     repTarget,
     countsTowardOneRm: true,
-    countsTowardRpeSignal: false,
+    // #61: the top set is also this scheme's RPE signal set — feeds both
+    // RpeBox's display and the redStreak trigger below, one shared
+    // designation, always the same set regardless of deload state (unlike
+    // Wave, Top-set+Backoff has no separate "recovery week" shape to
+    // exclude — a deload here is just this same top set at a lighter
+    // weight, still meaningfully the set worth reading RPE from).
+    countsTowardRpeSignal: true,
   };
   const backoffSets: PrescribedSet[] = Array.from(
     { length: config.backoffSetCount },
@@ -374,16 +480,59 @@ function updateTopsetBackoff(
   const topSet = sets.find((s) => s.setNumber === 1);
   const currentWeightKg = state.currentWeightKg ?? topSet?.actualWeightKg ?? 0;
   const currentRepTarget = state.currentRepTarget ?? config.topSetRepRangeLow;
+
+  // #61: same "ignore the deload session entirely" shape as
+  // updateDoubleProgression — see its own comment.
+  if (state.deloadPending) {
+    return {
+      currentWeightKg,
+      currentRepTarget,
+      deloadPending: false,
+      redStreak: 0,
+    };
+  }
+
+  // #61: "the set that counts" is the top set only — pre-decided (unlike
+  // Double Progression's averaged signal), since the top set is already
+  // this scheme's one designated set (countsTowardOneRm above agrees).
+  // Missing RPE on it -> non-red, same rule as Wave's own single-set
+  // signal (#60).
+  const isRed =
+    topSet !== undefined &&
+    topSet.rpe !== null &&
+    topSet.rpe >= HIGH_RPE_THRESHOLD;
+  const newRedStreak = isRed ? (state.redStreak ?? 0) + 1 : 0;
+
   const hitTarget =
     topSet !== undefined && (topSet.repsAchieved ?? 0) >= currentRepTarget;
-  if (!hitTarget) return { currentWeightKg, currentRepTarget };
+  if (!hitTarget) {
+    return { currentWeightKg, currentRepTarget, redStreak: newRedStreak };
+  }
   if (currentRepTarget >= config.topSetRepRangeHigh) {
     return {
       currentWeightKg: currentWeightKg + config.weightIncrement,
       currentRepTarget: config.topSetRepRangeLow,
+      redStreak: newRedStreak,
     };
   }
-  return { currentWeightKg, currentRepTarget: currentRepTarget + 1 };
+  return {
+    currentWeightKg,
+    currentRepTarget: currentRepTarget + 1,
+    redStreak: newRedStreak,
+  };
+}
+
+// #61: Top-set+Backoff's own Accept action — same shape as Double
+// Progression's, see its comment.
+export function acceptTopsetBackoffDeloadSuggestion(
+  state: TopsetBackoffState,
+): TopsetBackoffState {
+  return {
+    currentWeightKg: state.currentWeightKg,
+    currentRepTarget: state.currentRepTarget,
+    deloadPending: true,
+    redStreak: 0,
+  };
 }
 
 // Nothing tracked, nothing to prescribe beyond "how many sets" — no weight,
@@ -591,13 +740,61 @@ function updateWave(
   };
 }
 
+// #60/#61: the one shared "is an RPE-deload suggestion currently live"
+// rule, reused by every scheme that has one — each scheme's Log-page
+// render check, its own accept server action's re-verification, and the
+// Progress page's passive badge. Takes the two raw values rather than a
+// full state object since the schemes don't share a field name for
+// "already mid-deload" (Wave's inDeload vs. Double Progression/
+// Top-set+Backoff's deloadPending) — reimplementing `(redStreak ?? 0) >= 3
+// && !alreadyDeloading` independently at every call site was flagged as a
+// duplication smell in #66's code review when there was only one scheme
+// doing it; #61 adding two more made it worth actually fixing rather than
+// tripling.
+export function isRpeDeloadEligible(
+  redStreak: number | undefined,
+  alreadyDeloading: boolean | undefined,
+): boolean {
+  return (redStreak ?? 0) >= 3 && !alreadyDeloading;
+}
+
+// #61: pairs isRpeDeloadEligible with "which state fields does this scheme
+// use" so callers don't need their own scheme.type switch + state cast —
+// that dispatch shape (not just the eligibility formula) was still being
+// reimplemented once per call site even after isRpeDeloadEligible existed
+// (caught in code review). One place owns "wave uses inDeload, the other
+// two use deloadPending"; every caller (Log page render, Progress page
+// badge) becomes a single call. Rep Accumulation/Failure Sets have no
+// deload concept (#61's own out-of-scope list) and fall through to false.
+export function rpeDeloadEligibleForScheme(
+  schemeType: string,
+  schemeState: unknown,
+): boolean {
+  switch (schemeType) {
+    case "wave": {
+      const s = schemeState as WaveState;
+      return isRpeDeloadEligible(s.redStreak, s.inDeload);
+    }
+    case "double_progression": {
+      const s = schemeState as DoubleProgressionState;
+      return isRpeDeloadEligible(s.redStreak, s.deloadPending);
+    }
+    case "topset_backoff": {
+      const s = schemeState as TopsetBackoffState;
+      return isRpeDeloadEligible(s.redStreak, s.deloadPending);
+    }
+    default:
+      return false;
+  }
+}
+
 // #60: the Log page banner's Accept action — the *only* thing that turns a
 // redStreak >= 3 suggestion into a real deload. Deliberately dumb/pure: no
 // eligibility check in here (the caller, app/log/actions.ts's server
-// action, re-reads current state and confirms redStreak >= 3 && !inDeload
-// right before calling this, guarding against a stale page suggesting
-// something that's no longer true). trainingMaxKg/weekIndex carry through
-// unchanged — same as every other deload-entry path, prescribeWave ignores
+// action, re-reads current state and confirms isRpeDeloadEligible right
+// before calling this, guarding against a stale page suggesting something
+// that's no longer true). trainingMaxKg/weekIndex carry through unchanged
+// — same as every other deload-entry path, prescribeWave ignores
 // weekIndex entirely while inDeload is true, and it's restored to week 0
 // the moment the deload week itself gets logged (updateWave's inDeload
 // branch above).
