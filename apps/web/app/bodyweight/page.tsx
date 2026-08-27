@@ -37,7 +37,7 @@ export default async function BodyweightPage() {
           style={{
             padding: "9px 12px",
             fontSize: 17,
-            border: "1px solid #ccc",
+            border: "1px solid var(--border)",
           }}
         />
         <input
@@ -49,7 +49,7 @@ export default async function BodyweightPage() {
           style={{
             padding: "9px 12px",
             fontSize: 17,
-            border: "1px solid #ccc",
+            border: "1px solid var(--border)",
             width: 130,
           }}
         />
@@ -59,7 +59,9 @@ export default async function BodyweightPage() {
       </form>
 
       {entries.length === 0 ? (
-        <p style={{ color: "#999", fontSize: 20 }}>No entries yet.</p>
+        <p style={{ color: "var(--text-muted)", fontSize: 20 }}>
+          No entries yet.
+        </p>
       ) : (
         <ul style={{ listStyle: "none" }}>
           {entries.map((entry) => (
@@ -70,7 +72,7 @@ export default async function BodyweightPage() {
                 justifyContent: "space-between",
                 alignItems: "center",
                 padding: "12px 17px",
-                border: "1px solid #e5e5e5",
+                border: "1px solid var(--border)",
                 borderRadius: 12,
                 marginBottom: 9,
                 fontSize: 20,
@@ -83,7 +85,7 @@ export default async function BodyweightPage() {
                   type="submit"
                   style={{
                     fontSize: 16,
-                    color: "#dc2626",
+                    color: "var(--danger)",
                     background: "none",
                     border: "none",
                     cursor: "pointer",
@@ -105,7 +107,7 @@ const btnStyle = {
   fontSize: 17,
   borderRadius: 7,
   border: "none",
-  background: "#111",
-  color: "#fff",
+  background: "var(--accent)",
+  color: "var(--background)",
   cursor: "pointer",
 };

@@ -85,7 +85,7 @@ export default function ProgramEditor({
           display: "inline-block",
           fontSize: 14,
           fontWeight: 600,
-          color: "#fff",
+          color: "var(--text)",
           marginBottom: 8,
         }}
       >
@@ -127,7 +127,7 @@ export default function ProgramEditor({
         <div
           key={day.id}
           style={{
-            border: "1px solid #e5e5e5",
+            border: "1px solid var(--border)",
             borderRadius: 8,
             marginBottom: 10,
           }}
@@ -139,7 +139,7 @@ export default function ProgramEditor({
               alignItems: "center",
               padding: "10px 14px",
               cursor: "pointer",
-              background: "#fafafa",
+              background: "var(--surface)",
             }}
             onClick={() =>
               setExpandedDay(expandedDay === day.id ? null : day.id)
@@ -186,7 +186,7 @@ export default function ProgramEditor({
                 }
                 style={{
                   fontSize: 11,
-                  color: "#dc2626",
+                  color: "var(--danger)",
                   background: "none",
                   border: "none",
                   cursor: "pointer",
@@ -208,7 +208,7 @@ export default function ProgramEditor({
                   <div
                     key={key}
                     style={{
-                      border: "1px solid #eee",
+                      border: "1px solid var(--border)",
                       borderRadius: 6,
                       marginBottom: 8,
                     }}
@@ -229,7 +229,9 @@ export default function ProgramEditor({
                       <span style={{ fontSize: 13 }}>
                         {expandedExercise === key ? "▾" : "▸"}{" "}
                         <strong>{ex.exercise.name}</strong>{" "}
-                        <span style={{ color: "#999" }}>— {schemeLabel}</span>
+                        <span style={{ color: "var(--text-muted)" }}>
+                          — {schemeLabel}
+                        </span>
                       </span>
                       <div
                         style={{ display: "flex", gap: 4 }}
@@ -275,7 +277,7 @@ export default function ProgramEditor({
                           }
                           style={{
                             fontSize: 11,
-                            color: "#dc2626",
+                            color: "var(--danger)",
                             background: "none",
                             border: "none",
                             cursor: "pointer",
@@ -343,7 +345,7 @@ function ProgramHeader({
         }}
       >
         <div>
-          <div style={{ fontSize: 12, color: "#999" }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
             {program.isArchived
               ? "Archived program"
               : program.isActive
@@ -377,9 +379,9 @@ function ProgramHeader({
               onClick={onArchive}
               style={{
                 ...btnStyle,
-                background: "#fff",
-                color: "#dc2626",
-                border: "1px solid #dc2626",
+                background: "var(--background)",
+                color: "var(--danger)",
+                border: "1px solid var(--danger)",
               }}
             >
               Archive
@@ -405,7 +407,7 @@ function DayLabel({
       style={{
         fontWeight: 600,
         fontSize: 14,
-        color: "#111",
+        color: "var(--text)",
         display: "flex",
         alignItems: "center",
         gap: 6,
@@ -420,14 +422,14 @@ function DayLabel({
         style={{
           fontWeight: 600,
           fontSize: 14,
-          color: "#111",
+          color: "var(--text)",
           border: "none",
           background: "transparent",
           padding: 0,
           width: 160,
         }}
       />
-      <span style={{ fontWeight: 400, color: "#999" }}>
+      <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>
         ({day.exercises.length} exercises)
       </span>
     </span>
@@ -461,7 +463,9 @@ function ExercisePanel({
   return (
     <div style={{ padding: "0 12px 12px" }}>
       <div style={{ marginBottom: 8 }}>
-        <span style={{ fontSize: 12, color: "#666", marginRight: 8 }}>
+        <span
+          style={{ fontSize: 12, color: "var(--text-muted)", marginRight: 8 }}
+        >
           Scheme
         </span>
         <select
@@ -532,7 +536,7 @@ function AddExerciseForm({
   return (
     <div
       style={{
-        border: "1px dashed #ccc",
+        border: "1px dashed var(--border)",
         borderRadius: 6,
         padding: 12,
         marginTop: 4,
@@ -559,7 +563,13 @@ function AddExerciseForm({
 
       {mode === "existing" ? (
         library.length === 0 ? (
-          <p style={{ fontSize: 12, color: "#999", marginBottom: 8 }}>
+          <p
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              marginBottom: 8,
+            }}
+          >
             No exercises yet — create one below.
           </p>
         ) : (
@@ -645,9 +655,9 @@ function AddExerciseForm({
           onClick={onCancel}
           style={{
             ...btnStyle,
-            background: "#fff",
-            color: "#111",
-            border: "1px solid #ccc",
+            background: "var(--background)",
+            color: "var(--text)",
+            border: "1px solid var(--border)",
           }}
         >
           Cancel
@@ -662,8 +672,8 @@ const btnStyle = {
   fontSize: 12,
   borderRadius: 5,
   border: "none",
-  background: "#111",
-  color: "#fff",
+  background: "var(--accent)",
+  color: "var(--background)",
   cursor: "pointer",
 };
 
@@ -671,9 +681,9 @@ const iconBtnStyle = {
   padding: "2px 8px",
   fontSize: 14,
   lineHeight: 1,
-  color: "#111",
+  color: "var(--text)",
   borderRadius: 4,
-  border: "1px solid #ddd",
-  background: "#fff",
+  border: "1px solid var(--border)",
+  background: "var(--background)",
   cursor: "pointer",
 };

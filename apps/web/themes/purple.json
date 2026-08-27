@@ -1,0 +1,12 @@
+{
+  "name": "purple",
+  "roles": {
+    "background": "#130f1a",
+    "surface": "#2b1a45",
+    "text": "#f2eef8",
+    "textMuted": "#a396b8",
+    "accent": "#a855f7",
+    "border": "#4a2f73",
+    "danger": "#ef4444"
+  }
+}

@@ -78,14 +78,14 @@ function WeekAxis({
             y1={plotHeight}
             x2={x}
             y2={plotHeight + 4}
-            stroke="#ccc"
+            stroke="var(--border)"
           />
           <text
             x={x}
             y={plotHeight + 15}
             textAnchor="middle"
             fontSize={10}
-            fill="#999"
+            fill="var(--text-muted)"
           >
             {formatShortDate(date)}
           </text>
@@ -126,7 +126,7 @@ function YAxis({
               y1={y}
               x2={plotWidth}
               y2={y}
-              stroke="#e5e5e5"
+              stroke="var(--border)"
               strokeWidth={1}
             />
             <text
@@ -135,7 +135,7 @@ function YAxis({
               textAnchor="end"
               dominantBaseline="middle"
               fontSize={10}
-              fill="#999"
+              fill="var(--text-muted)"
             >
               {v}
             </text>
@@ -154,10 +154,9 @@ interface HoverState {
 }
 
 // Marker dot + label bubble at the hovered point (#44). The bubble is a
-// solid fill behind its own text — unlike a thin line, an opaque box has
-// strong contrast against light or dark backgrounds regardless of the
-// page's theme, so this doesn't need the same light/dark-aware color pick
-// #41 needed for a thin stroke.
+// solid --surface fill behind --text, opaque enough to read against any of
+// the toggled lines behind it regardless of which theme (#32) is active —
+// unlike a thin line, which needed #41's own theme-aware color pick.
 function HoverTooltip({
   x,
   y,
@@ -176,7 +175,7 @@ function HoverTooltip({
         cy={y}
         r={4}
         fill={color}
-        stroke="#fff"
+        stroke="var(--background)"
         strokeWidth={1.5}
       />
       <rect
@@ -185,7 +184,7 @@ function HoverTooltip({
         width={boxWidth}
         height={boxHeight}
         rx={4}
-        fill="#111"
+        fill="var(--surface)"
         opacity={0.9}
       />
       <text
@@ -193,7 +192,7 @@ function HoverTooltip({
         y={boxY + boxHeight / 2}
         dominantBaseline="middle"
         fontSize={11}
-        fill="#fff"
+        fill="var(--text)"
       >
         {label}
       </text>
@@ -221,7 +220,7 @@ const PALETTE = [
 // than wrapping a negative index through modulo.
 function colorForExercise(exerciseId: string, list: { id: string }[]): string {
   const i = list.findIndex((e) => e.id === exerciseId);
-  return i === -1 ? "#999" : PALETTE[i % PALETTE.length]!;
+  return i === -1 ? "var(--text-muted)" : PALETTE[i % PALETTE.length]!;
 }
 
 // Total <svg> width. The box wrapping it has border(1) + padding(16) on
@@ -281,7 +280,7 @@ const BODYWEIGHT_COLOR = "#db2777";
 // Shared "just a value, not a judgment" text color — BodyweightMultipleBadge
 // and RpeBox's non-high readings both want this same muted tone rather than
 // each hardcoding "#666" independently.
-const NEUTRAL_VALUE_COLOR = "#666";
+const NEUTRAL_VALUE_COLOR = "var(--text-muted)";
 // RpeBox's own width cap — narrow enough to read as a sidebar next to the
 // exercise-overlay box, not so narrow that 3 date+value columns crowd.
 const RPE_BOX_MAX_W = 220;
@@ -329,7 +328,9 @@ interface ProgressChartsProps {
 function DeltaBadge({ value }: { value: number | null }) {
   if (value === null) {
     return (
-      <span style={{ fontSize: 12, color: "#999" }}>not enough data yet</span>
+      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        not enough data yet
+      </span>
     );
   }
   const positive = value >= 0;
@@ -337,7 +338,9 @@ function DeltaBadge({ value }: { value: number | null }) {
     <span
       style={{
         fontSize: 12,
-        color: positive ? "#16a34a" : "#dc2626",
+        // Positive stays a hardcoded green — no "success" role exists in the
+        // theme catalog (#20), only danger. Negative uses that role.
+        color: positive ? "#16a34a" : "var(--danger)",
         fontWeight: 600,
       }}
     >
@@ -360,7 +363,9 @@ function DeltaBadge({ value }: { value: number | null }) {
 function BodyweightMultipleBadge({ value }: { value: number | null }) {
   if (value === null) {
     return (
-      <span style={{ fontSize: 12, color: "#999" }}>not enough data yet</span>
+      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        not enough data yet
+      </span>
     );
   }
   return (
@@ -409,14 +414,16 @@ function RpeBox({
       style={{
         flex: "1 1 auto",
         maxWidth: RPE_BOX_MAX_W,
-        border: "1px solid #e5e5e5",
+        border: "1px solid var(--border)",
         borderRadius: 8,
         padding: 16,
       }}
     >
       <h2 style={{ fontSize: 13, marginBottom: 10 }}>Recent RPE</h2>
       {trends.length === 0 ? (
-        <p style={{ color: "#999", fontSize: 12 }}>No RPE logged yet.</p>
+        <p style={{ color: "var(--text-muted)", fontSize: 12 }}>
+          No RPE logged yet.
+        </p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {trends.map((t) => (
@@ -449,7 +456,7 @@ function RpeBox({
                     <div
                       style={{
                         fontSize: 9,
-                        color: "#999",
+                        color: "var(--text-muted)",
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -459,21 +466,12 @@ function RpeBox({
                       style={{
                         fontSize: 12,
                         fontWeight: 600,
-                        // NEUTRAL_VALUE_COLOR, not "#111" — the page
-                        // background here is actually near-black
-                        // (rgb(10,10,10), prefers-color-scheme dark; see
-                        // known-issues.md's "no design system yet, isn't
-                        // theme-aware" entry), so bare "#111" text with no
-                        // background of its own is nearly invisible.
-                        // Confirmed via getComputedStyle + a real render,
-                        // not just guessed — every other "#111" in this
-                        // file pairs it with an explicit opaque background
-                        // of its own (HoverTooltip's fill, the active
-                        // range-tab button), which this bare text color
-                        // didn't have.
+                        // High RPE gets the danger role regardless of theme
+                        // (#32) — it's a warning, not a per-series color, so
+                        // it doesn't belong in PALETTE.
                         color:
                           r.avgRpe >= HIGH_RPE_THRESHOLD
-                            ? "#dc2626"
+                            ? "var(--danger)"
                             : NEUTRAL_VALUE_COLOR,
                       }}
                     >
@@ -626,10 +624,11 @@ export default function ProgressCharts({
               style={{
                 padding: "4px 10px",
                 fontSize: 12,
-                border: "1px solid #ccc",
+                border: "1px solid var(--border)",
                 borderRadius: 4,
-                background: range === r.key ? "#111" : "#fff",
-                color: range === r.key ? "#fff" : "#111",
+                background:
+                  range === r.key ? "var(--accent)" : "var(--background)",
+                color: range === r.key ? "var(--background)" : "var(--text)",
                 cursor: "pointer",
               }}
             >
@@ -638,7 +637,7 @@ export default function ProgressCharts({
           ))}
         </div>
       </div>
-      <p style={{ color: "#666", marginBottom: 16, fontSize: 13 }}>
+      <p style={{ color: "var(--text-muted)", marginBottom: 16, fontSize: 13 }}>
         Toggle exercises to overlay their 1RM trend — range applies to both
         boxes below.
       </p>
@@ -666,7 +665,7 @@ export default function ProgressCharts({
             // date text (found live-testing #56).
             width: CHART_W + BOX_CHROME,
             flex: "0 0 auto",
-            border: "1px solid #e5e5e5",
+            border: "1px solid var(--border)",
             borderRadius: 8,
             padding: 16,
           }}
@@ -680,7 +679,7 @@ export default function ProgressCharts({
               alignItems: "center",
               gap: 6,
               fontSize: 12,
-              color: "#666",
+              color: "var(--text-muted)",
               marginBottom: 10,
               cursor: "pointer",
             }}
@@ -693,7 +692,7 @@ export default function ProgressCharts({
             Show all exercises (including archived programs)
           </label>
           {exerciseList.length === 0 ? (
-            <p style={{ color: "#999", fontSize: 13 }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
               {showAllExercises
                 ? "No 1RM-tracked exercises found across any program yet."
                 : hasActiveProgram
@@ -815,7 +814,7 @@ export default function ProgressCharts({
                       x={PLOT_W / 2}
                       y={CHART_H / 2}
                       textAnchor="middle"
-                      fill="#999"
+                      fill="var(--text-muted)"
                       fontSize={13}
                     >
                       {activeExercises.length === 0
@@ -833,7 +832,13 @@ export default function ProgressCharts({
                   )}
                 </g>
               </svg>
-              <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  marginTop: 4,
+                }}
+              >
                 est. 1RM (kg), shared axis across toggled exercises
               </div>
             </>
@@ -856,7 +861,11 @@ export default function ProgressCharts({
 
       {/* Bodyweight box — always its own, never merged into the overlay */}
       <div
-        style={{ border: "1px solid #e5e5e5", borderRadius: 8, padding: 16 }}
+        style={{
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          padding: 16,
+        }}
       >
         <div
           style={{
@@ -870,7 +879,7 @@ export default function ProgressCharts({
           <DeltaBadge value={computeDelta(bwSliced)} />
         </div>
         {bwSliced.length === 0 ? (
-          <p style={{ color: "#999", fontSize: 13 }}>
+          <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
             No bodyweight entries in this range yet.
           </p>
         ) : (

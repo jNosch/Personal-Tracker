@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import Nav, { NAV_HEIGHT } from "./Nav";
+import { DEFAULT_THEME, THEME_NAMES } from "./theme-manifest";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -23,15 +25,25 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning: next-themes sets data-theme on <html> via a
+    // blocking inline script before hydration (#32) — the SSR markup won't
+    // match the client's first render, which is expected here, not a bug.
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable}`}
         // Reserves space so the fixed bottom nav never overlaps the last
         // bit of a page's content.
         style={{ paddingBottom: NAV_HEIGHT }}
       >
-        {children}
-        <Nav />
+        <ThemeProvider
+          attribute="data-theme"
+          themes={[...THEME_NAMES]}
+          defaultTheme={DEFAULT_THEME}
+          enableSystem={false}
+        >
+          {children}
+          <Nav />
+        </ThemeProvider>
       </body>
     </html>
   );
