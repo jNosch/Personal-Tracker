@@ -196,7 +196,7 @@ export default function LogSessionForm({
         }}
       >
         <div>
-          <span style={{ color: "#999" }}>{programName} — </span>
+          <span style={{ color: "var(--text-muted)" }}>{programName} — </span>
           <strong>{dayLabel}</strong>
         </div>
         <label>
@@ -209,7 +209,7 @@ export default function LogSessionForm({
               padding: "4px 8px",
               fontFamily: "monospace",
               fontSize: 17,
-              border: "1px solid #ccc",
+              border: "1px solid var(--border)",
             }}
           />
         </label>
@@ -240,13 +240,19 @@ export default function LogSessionForm({
                 alignItems: "baseline",
                 fontWeight: 700,
                 marginBottom: 6,
-                borderBottom: "1px solid #111",
+                borderBottom: "1px solid var(--text)",
                 paddingBottom: 3,
               }}
             >
               <span>{ex.exerciseName}</span>
               {ex.repAccumulationTargetTotalReps !== undefined && (
-                <span style={{ fontWeight: 400, fontSize: 15, color: "#666" }}>
+                <span
+                  style={{
+                    fontWeight: 400,
+                    fontSize: 15,
+                    color: "var(--text-muted)",
+                  }}
+                >
                   target {ex.repAccumulationTargetTotalReps} reps · logged{" "}
                   {loggedTotalReps(ex.sets, entries[ex.exerciseInDayId] ?? {})}
                 </span>
@@ -264,10 +270,10 @@ export default function LogSessionForm({
                     alignItems: "center",
                     gap: 12,
                     padding: "5px 0",
-                    borderBottom: "1px solid #f0f0f0",
+                    borderBottom: "1px solid var(--border)",
                   }}
                 >
-                  <span style={{ width: 24, color: "#666" }}>
+                  <span style={{ width: 24, color: "var(--text-muted)" }}>
                     {set.setNumber}
                     {set.countsTowardOneRm && "*"}
                   </span>
@@ -286,7 +292,7 @@ export default function LogSessionForm({
                     </label>
                   ) : (
                     <>
-                      <span style={{ width: 130, color: "#999" }}>
+                      <span style={{ width: 130, color: "var(--text-muted)" }}>
                         {set.prescribedWeightKg}×{set.repTarget ?? "—"}
                       </span>
                       <input
@@ -347,7 +353,7 @@ export default function LogSessionForm({
                       style={{
                         marginLeft: "auto",
                         fontSize: 15,
-                        color: "#999",
+                        color: "var(--text-muted)",
                         fontStyle: "italic",
                       }}
                     >
@@ -361,7 +367,9 @@ export default function LogSessionForm({
         ),
       )}
 
-      <div style={{ fontSize: 16, color: "#999", marginBottom: 17 }}>
+      <div
+        style={{ fontSize: 16, color: "var(--text-muted)", marginBottom: 17 }}
+      >
         * counts toward 1RM
       </div>
 
@@ -371,8 +379,8 @@ export default function LogSessionForm({
         style={{
           padding: "9px 24px",
           fontSize: 19,
-          background: "#111",
-          color: "#fff",
+          background: "var(--accent)",
+          color: "var(--background)",
           border: "none",
           fontFamily: "monospace",
           cursor: blockedOnTrainingMax ? "not-allowed" : "pointer",
@@ -381,7 +389,9 @@ export default function LogSessionForm({
         save session
       </button>
       {blockedOnTrainingMax && (
-        <span style={{ fontSize: 16, color: "#999", marginLeft: 12 }}>
+        <span
+          style={{ fontSize: 16, color: "var(--text-muted)", marginLeft: 12 }}
+        >
           set training max above first
         </span>
       )}
@@ -408,13 +418,13 @@ function TrainingMaxPrompt({
     <div
       style={{
         marginBottom: 26,
-        border: "1px dashed #ccc",
+        border: "1px dashed var(--border)",
         borderRadius: 4,
         padding: 14,
       }}
     >
       <div style={{ fontWeight: 700, marginBottom: 9 }}>{exerciseName}</div>
-      <label style={{ fontSize: 17, color: "#666" }}>
+      <label style={{ fontSize: 17, color: "var(--text-muted)" }}>
         no training max set yet — enter current 1RM (kg){" "}
         <input
           type="number"
@@ -435,8 +445,8 @@ function TrainingMaxPrompt({
           marginLeft: 12,
           padding: "5px 14px",
           fontSize: 17,
-          background: "#111",
-          color: "#fff",
+          background: "var(--accent)",
+          color: "var(--background)",
           border: "none",
           fontFamily: "monospace",
           cursor: "pointer",
@@ -475,7 +485,7 @@ function RpeDeloadBanner({
     <div
       style={{
         marginBottom: 10,
-        border: "1px dashed #dc2626",
+        border: "1px dashed var(--danger)",
         borderRadius: 4,
         padding: 14,
         display: "flex",
@@ -498,8 +508,8 @@ function RpeDeloadBanner({
         style={{
           padding: "5px 14px",
           fontSize: 17,
-          background: "#dc2626",
-          color: "#fff",
+          background: "var(--danger)",
+          color: "var(--background)",
           border: "none",
           fontFamily: "monospace",
           cursor: "pointer",
@@ -518,6 +528,6 @@ function inputStyle(width: number) {
     padding: 4,
     fontFamily: "monospace",
     fontSize: 17,
-    border: "1px solid #ccc",
+    border: "1px solid var(--border)",
   } as const;
 }

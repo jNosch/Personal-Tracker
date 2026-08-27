@@ -28,7 +28,7 @@ const numInput = (value: number, onChange: (v: number) => void, width = 56) => (
 
 const labelStyle = {
   fontSize: 12,
-  color: "#666",
+  color: "var(--text-muted)",
   display: "block",
   marginBottom: 2,
 };
@@ -69,9 +69,9 @@ function SetStyleChip({
         height: 22,
         fontSize: 11,
         borderRadius: 4,
-        border: `1px solid ${value ? "#111" : "#ddd"}`,
-        background: value ? "#111" : "#fff",
-        color: value ? "#fff" : "#999",
+        border: `1px solid ${value ? "var(--text)" : "var(--border)"}`,
+        background: value ? "var(--accent)" : "var(--background)",
+        color: value ? "var(--background)" : "var(--text-muted)",
         cursor: "pointer",
       }}
     >
@@ -104,7 +104,13 @@ function SetStyleRow({
       <div style={{ display: "flex", gap: 8 }}>
         {positions.map((p) => (
           <div key={p.setNumber} style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 10, color: "#999", marginBottom: 2 }}>
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--text-muted)",
+                marginBottom: 2,
+              }}
+            >
               {p.setNumber}
             </div>
             <SetStyleChip
@@ -223,7 +229,13 @@ export default function SchemeConfigFields({
           <span style={labelStyle}>Weight increment (kg)</span>
           {numInput(c.weightIncrement, (v) => set({ weightIncrement: v }))}
         </div>
-        <div style={{ ...field, borderTop: "1px solid #eee", paddingTop: 8 }}>
+        <div
+          style={{
+            ...field,
+            borderTop: "1px solid var(--border)",
+            paddingTop: 8,
+          }}
+        >
           <span style={{ ...labelStyle, fontWeight: 600 }}>Back-off sets</span>
         </div>
         <div style={field}>
@@ -268,7 +280,7 @@ export default function SchemeConfigFields({
             onChange({ type: "failure_sets", config: { setCount: v } }),
           )}
         </div>
-        <div style={{ fontSize: 12, color: "#999" }}>
+        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
           No weight, no reps, no tracking — just a &ldquo;done&rdquo; mark.
         </div>
       </div>
@@ -391,9 +403,19 @@ export default function SchemeConfigFields({
         // list rendered at all and the feature would be silently
         // unusable for them.
         <div
-          style={{ border: "1px solid #e5e5e5", borderRadius: 6, padding: 10 }}
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            padding: 10,
+          }}
         >
-          <div style={{ fontSize: 12, color: "#666", marginBottom: 6 }}>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              marginBottom: 6,
+            }}
+          >
             5/3/1 preset weeks
           </div>
           {c.weekTable.map((week, wi) => (
@@ -402,7 +424,7 @@ export default function SchemeConfigFields({
               style={{
                 marginBottom: 8,
                 paddingBottom: 8,
-                borderBottom: "1px solid #f0f0f0",
+                borderBottom: "1px solid var(--border)",
               }}
             >
               <div style={{ fontSize: 12, marginBottom: 4 }}>Week {wi + 1}</div>
@@ -416,7 +438,13 @@ export default function SchemeConfigFields({
                     marginBottom: 4,
                   }}
                 >
-                  <span style={{ width: 90, color: "#999", fontSize: 13 }}>
+                  <span
+                    style={{
+                      width: 90,
+                      color: "var(--text-muted)",
+                      fontSize: 13,
+                    }}
+                  >
                     {s.percentageOfTrainingMax}% × {s.repTarget}
                   </span>
                   <SetStyleChip
@@ -432,9 +460,19 @@ export default function SchemeConfigFields({
         </div>
       ) : (
         <div
-          style={{ border: "1px solid #e5e5e5", borderRadius: 6, padding: 10 }}
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            padding: 10,
+          }}
         >
-          <div style={{ fontSize: 12, color: "#666", marginBottom: 6 }}>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              marginBottom: 6,
+            }}
+          >
             Custom week table
           </div>
           {c.weekTable.map((week, wi) => (
@@ -443,7 +481,7 @@ export default function SchemeConfigFields({
               style={{
                 marginBottom: 8,
                 paddingBottom: 8,
-                borderBottom: "1px solid #f0f0f0",
+                borderBottom: "1px solid var(--border)",
               }}
             >
               <div
